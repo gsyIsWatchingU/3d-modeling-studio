@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Data
+data/
+db.json
+uploads/
+models/
+
+# Logs
+logs/
+*.log
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Deploy
+.deploy-tmp/
+run/

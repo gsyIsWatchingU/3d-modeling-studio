@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D 建模工作室</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/examples/js/loaders/GLTFLoader.js"></script>
+</head>
+<body>
+    <div id="app">
+        <!-- 左侧工具栏 -->
+        <aside class="sidebar left">
+            <div class="panel">
+                <h3>生成</h3>
+                <div class="upload-area" id="uploadArea">
+                    <input type="file" id="fileInput" accept="image/*" hidden>
+                    <div class="upload-placeholder">
+                        <span>拖拽图片到这里</span>
+                        <span>或点击上传</span>
+                    </div>
+                    <img id="previewImg" hidden>
+                </div>
+                <div class="form-group">
+                    <label>生成提示词（可选）</label>
+                    <textarea id="promptInput" placeholder="描述你想要的3D模型..."></textarea>
+                </div>
+                <button class="btn primary" id="generateBtn">
+                    <span class="btn-text">生成3D模型</span>
+                    <span class="loading" hidden></span>
+                </button>
+                <div class="api-config">
+                    <label>SPU API 地址</label>
+                    <input type="text" id="spuApiUrl" placeholder="https://your-spu-service.com/api/generate">
+                    <label>API Key（可选）</label>
+                    <input type="password" id="spuApiKey" placeholder="输入API Key">
+                    <button class="btn" id="saveConfigBtn">保存配置</button>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h3>模型列表</h3>
+                <div class="model-list" id="modelList">
+                    <div class="empty-state">暂无模型，上传图片生成第一个吧</div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 中间3D视图 -->
+        <main class="viewport">
+            <canvas id="canvas"></canvas>
+            <div class="viewport-overlay">
+                <div class="toolbar-top">
+                    <button class="tool-btn" id="resetCameraBtn" title="重置视角">⟲</button>
+                    <button class="tool-btn" id="wireframeBtn" title="线框模式">⊞</button>
+                    <button class="tool-btn" id="autoRotateBtn" title="自动旋转">⟳</button>
+                </div>
+                <div class="viewport-hint">
+                    左键旋转 · 右键平移 · 滚轮缩放
+                </div>
+            </div>
+        </main>
+
+        <!-- 右侧属性面板 -->
+        <aside class="sidebar right">
+            <div class="panel">
+                <h3>材质</h3>
+                <div class="form-group">
+                    <label>颜色</label>
+                    <input type="color" id="materialColor" value="#4a9eff">
+                </div>
+                <div class="form-group">
+                    <label>粗糙度: <span id="roughnessValue">0.5</span></label>
+                    <input type="range" id="roughnessSlider" min="0" max="1" step="0.01" value="0.5">
+                </div>
+                <div class="form-group">
+                    <label>金属度: <span id="metalnessValue">0.1</span></label>
+                    <input type="range" id="metalnessSlider" min="0" max="1" step="0.01" value="0.1">
+                </div>
+            </div>
+
+            <div class="panel">
+                <h3>灯光</h3>
+                <div class="form-group">
+                    <label>环境光强度: <span id="ambientValue">0.6</span></label>
+                    <input type="range" id="ambientSlider" min="0" max="2" step="0.01" value="0.6">
+                </div>
+                <div class="form-group">
+                    <label>主光强度: <span id="dirValue">1.0</span></label>
+                    <input type="range" id="dirSlider" min="0" max="3" step="0.01" value="1.0">
+                </div>
+            </div>
+
+            <div class="panel">
+                <h3>导出</h3>
+                <button class="btn" id="exportGlbBtn">导出 GLB</button>
+                <button class="btn" id="exportObjBtn">导出 OBJ</button>
+                <button class="btn" id="exportPngBtn">导出截图 PNG</button>
+            </div>
+        </aside>
+    </div>
+
+    <script src="main.js"></script>
+</body>
+</html>

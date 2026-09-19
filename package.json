@@ -1,0 +1,19 @@
+{
+  "name": "3d-modeling-studio",
+  "version": "1.0.0",
+  "description": "一个基于 Three.js 的网页端3D建模工具，支持上传图片调用SPU服务生成3D模型。",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "lowdb": "^7.0.1",
+    "multer": "^2.4.0"
+  }
+}

@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  3d-modeling-studio:
+    build: .
+    container_name: 3d-modeling-studio
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/data
+      - ./public:/app/public
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DB_PATH=/data/db.json
+      - UPLOAD_DIR=/data/uploads
+      - MODEL_DIR=/data/models
+      - SPU_API_URL=http://your-spu-gpu-service:8000/api/generate
+      - SPU_API_KEY=your-api-key-here
+    # 如果SPU服务也在同一台GPU服务器上，取消下面的注释
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
