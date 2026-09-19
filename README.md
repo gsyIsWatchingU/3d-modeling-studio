@@ -12,23 +12,43 @@ git commit -m "你的更新"
 git push origin main
 ```
 
+**前提**：GPU 服务器上要有本仓库专属的 self-hosted runner（标签 `3d-modeling-studio`）。
+没有 runner 时 workflow 会一直排队到被取消。
+
 **自动流程：**
-1. GitHub Actions 触发 CI 构建检查
-2. 安装依赖、语法检查
-3. 打包部署文件
-4. 自动部署到 GPU 服务器
-5. 健康检查验证服务正常
+1. GitHub Actions 触发 CI 构建检查（`ubuntu-latest`：装依赖、语法检查、打发布包）
+2. 部署 job 在自己服务器的 runner 上跑：下载发布包
+3. `deploy/apply-release.sh` 覆盖代码（`data/`、`logs/`、`run/`、`.env` 被保留）
+4. `node --check` + 必要时装依赖
+5. supervisor 重启 `3d-modeling-studio` 与 `cloudflared-3d-modeling-studio`
+6. `deploy/verify-public.sh` 做健康检查，最后写 `run/deployed-commit`
+
+**部署是否成功，只看这一个文件：**
+
+```bash
+ssh mygpu 'cat /workspace/projects/3d-modeling-studio/run/deployed-commit'
+```
+
+它等于本地 `HEAD` 就说明两个 job 都通过了。
 
 ## 部署架构
 
 ```
-GitHub Push → GitHub Actions CI → 打包 → GPU服务器部署 → 公网访问
+GitHub Push → CI 检查打包 → 专属 runner → apply-release → supervisor 重启 → cloudflared 隧道 → 公网
 ```
 
 **服务器路径：**
 - 代码：`/workspace/projects/3d-modeling-studio/`
-- 数据：`/workspace/data/3d-modeling-studio/`
+- 数据：`/workspace/projects/3d-modeling-studio/data/`（db.json、uploads、models，发布时被保留）
 - 日志：`/workspace/logs/3d-modeling-studio/`
+- 监听端口：`3300`（仅本机，公网走 cloudflared Quick Tunnel）
+- supervisor 配置：`deploy/supervisor.conf` 与 `deploy/cloudflared.conf`，由 `/workspace/etc/supervisord.conf` 的 `[include]` 引入
+
+公网域名随隧道重启变化，取当前域名：
+
+```bash
+ssh mygpu 'cd /workspace/projects/3d-modeling-studio && bash deploy/public-url.sh'
+```
 
 ## 项目结构
 
@@ -59,11 +79,11 @@ GitHub Push → GitHub Actions CI → 打包 → GPU服务器部署 → 公网�
 ## 常用命令
 
 ```bash
-# 查看服务状态
-sudo supervisorctl status 3d-modeling-studio
+# 查看服务状态（socket 不在默认路径，必须带 -c；服务器是 root，不用 sudo）
+supervisorctl -c /workspace/etc/supervisord.conf status 3d-modeling-studio cloudflared-3d-modeling-studio
 
 # 重启服务
-sudo supervisorctl restart 3d-modeling-studio
+supervisorctl -c /workspace/etc/supervisord.conf restart 3d-modeling-studio cloudflared-3d-modeling-studio
 
 # 查看日志
 tail -f /workspace/logs/3d-modeling-studio/out.log

@@ -23,6 +23,12 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Agent 记忆目录
+.workbuddy/
+
 # Deploy
 .deploy-tmp/
 run/
+
+# WorkBuddy 发布应用标记文件（本地 artifact 追踪，不进仓库）
+.wbapp_*.genie

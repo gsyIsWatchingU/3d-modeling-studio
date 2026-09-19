@@ -5,44 +5,90 @@ on:
     branches: [main]
 
 jobs:
-  deploy:
-    runs-on: [self-hosted, linux, x64]
-    env:
-      PATH: /workspace/.tools/node-v20/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-      NODE_ENV: production
+  ci:
+    name: 构建检查
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: npm ci
-        run: npm ci --production
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
-      - name: Check syntax
-        run: node --check server/index.js
+      - name: Install deps
+        run: npm ci --omit=dev
 
-      - name: Deploy to server
+      - name: Syntax check
+        run: |
+          node --check server/index.js
+          node --check server/db.js
+
+      - name: Package release
         run: |
           set -euo pipefail
-          mkdir -p /workspace/projects/3d-modeling-studio
-          mkdir -p /workspace/data/3d-modeling-studio/uploads
-          mkdir -p /workspace/data/3d-modeling-studio/models
-          mkdir -p /workspace/logs/3d-modeling-studio
-          cp -r . /workspace/projects/3d-modeling-studio/
+          mkdir -p .deploy-tmp
+          # 只打包运行期需要的文件：数据/日志目录由部署机保留，不随发布包覆盖
+          tar -czf .deploy-tmp/release.tar.gz \
+            --exclude='./.git' \
+            --exclude='./node_modules' \
+            --exclude='./data' \
+            --exclude='./logs' \
+            --exclude='./run' \
+            --exclude='./uploads' \
+            --exclude='./models' \
+            --exclude='./.deploy-tmp' \
+            .
 
-      - name: Start service
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: .deploy-tmp/release.tar.gz
+          retention-days: 3
+
+  deploy:
+    name: 部署到 GPU 服务器
+    needs: ci
+    # 专属 self-hosted runner：每个项目一套，靠最后一个标签区分（注册 runner 时要带上它）
+    runs-on: [self-hosted, linux, x64, 3d-modeling-studio]
+    env:
+      PATH: /workspace/.tools/node-v20/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      NODE_ENV: production
+      PORT: 3300
+    steps:
+      - name: Download release artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: .deploy-tmp
+
+      - name: Apply release
         run: |
-          cd /workspace/projects/3d-modeling-studio
-          bash deploy/start.sh
+          set -euo pipefail
+          DEPLOY=/workspace/projects/3d-modeling-studio
+          mkdir -p "$DEPLOY/run"
+          rm -rf "$DEPLOY/.deploy-tmp"
+          mkdir -p "$DEPLOY/.deploy-tmp/release"
+          tar -xzf .deploy-tmp/release.tar.gz -C "$DEPLOY/.deploy-tmp/release"
+          bash "$DEPLOY/.deploy-tmp/release/deploy/apply-release.sh" \
+            "$DEPLOY/.deploy-tmp/release" "$DEPLOY"
+
+      - name: Restart services
+        run: |
+          set -euo pipefail
+          # supervisor 的 socket 不在默认路径，必须带 -c
+          supervisorctl -c /workspace/etc/supervisord.conf \
+            restart 3d-modeling-studio cloudflared-3d-modeling-studio
 
       - name: Verify public site
         run: |
           set -euo pipefail
-          # 从 cloudflared 日志里解析当前公网域名
-          BASE=$(grep -hoE 'https://[a-zA-Z0-9.-]+\.trycloudflare\.com' \
-            /workspace/logs/3d-modeling-studio/cloudflared.out.log \
-            /workspace/logs/3d-modeling-studio/cloudflared.err.log 2>/dev/null | tail -1)
-          if [[ -z "$BASE" ]]; then
-            echo "failed to resolve public URL from cloudflared logs" >&2
-            exit 1
-          fi
-          echo "public URL: $BASE"
+          cd /workspace/projects/3d-modeling-studio
+          bash deploy/verify-public.sh
+
+      - name: Mark deployed commit
+        # 只有上面每一步都通过才会写入，
+        # 所以 run/deployed-commit 等于本地 HEAD 就说明两个 job 都成功了
+        run: printf '%s' "$GITHUB_SHA" > /workspace/projects/3d-modeling-studio/run/deployed-commit

@@ -51,11 +51,11 @@ sudo mkdir -p /workspace/data/3d-modeling-studio/models
 ## 常用命令
 
 ```bash
-# 查看状态
-sudo supervisorctl status 3d-modeling-studio
+# 查看状态（socket 不在默认路径，必须带 -c；服务器是 root，不用 sudo）
+supervisorctl -c /workspace/etc/supervisord.conf status 3d-modeling-studio
 
 # 重启
-sudo supervisorctl restart 3d-modeling-studio
+supervisorctl -c /workspace/etc/supervisord.conf restart 3d-modeling-studio
 
 # 查看日志
 tail -f /workspace/logs/3d-modeling-studio/out.log
@@ -64,10 +64,15 @@ tail -f /workspace/logs/3d-modeling-studio/err.log
 
 ## 访问地址
 
-服务启动后，通过服务器IP + 端口访问：
+服务只监听本机 `127.0.0.1:3300`，公网入口是 cloudflared Quick Tunnel，**域名是随机的、隧道每次重启都会变**：
+
+```bash
+cd /workspace/projects/3d-modeling-studio && bash deploy/public-url.sh
+# 或跑完整验收：进程状态 + 本机/公网健康检查 + 打印地址
+bash deploy/verify-public.sh
 ```
-http://<gpu-server-ip>:3000
-```
+
+它输出形如 `https://xxxx.trycloudflare.com`。不要用「服务器 IP + 端口」这种方式对外访问。
 
 ## 目录结构（服务器上）
 
@@ -78,12 +83,13 @@ http://<gpu-server-ip>:3000
 │       ├── server/
 │       ├── public/
 │       ├── deploy/
-│       └── package.json
-├── data/
-│   └── 3d-modeling-studio/     # 数据存储
-│       ├── db.json
-│       ├── uploads/
-│       └── models/
+│       │   ├── supervisor.conf     # 被主配置的 [include] 引入
+│       │   └── cloudflared.conf    # 公网隧道
+│       ├── data/               # 数据存储（发布时被 --exclude 保护）
+│       │   ├── db.json
+│       │   ├── uploads/
+│       │   └── models/
+│       └── run/                # deployed-commit 等部署标记
 └── logs/
     └── 3d-modeling-studio/     # 日志
         ├── out.log
