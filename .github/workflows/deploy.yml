@@ -57,7 +57,7 @@ jobs:
     name: 部署到 GPU 服务器
     needs: ci
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, linux, x64, gpu-server]
+    runs-on: [self-hosted, linux, x64, write-here-gpu]
     timeout-minutes: 15
     environment: production
     env:
