@@ -12,10 +12,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: 3d-modeling-studio-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
   ci:
     name: 构建检查
