@@ -5,16 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>3D 建模工作室</title>
     <link rel="stylesheet" href="style.css">
-    <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/examples/js/controls/OrbitControls.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
 </head>
 <body>
     <div id="app">
+        <!-- 顶栏 -->
+        <header class="app-bar">
+            <span class="app-bar-title">3D_MODELING_STUDIO<span class="cursor-block"></span></span>
+            <span class="app-bar-tag">MODELING TOOLKIT</span>
+        </header>
+
+        <div class="app-main">
         <!-- 左侧工具栏 -->
         <aside class="sidebar left">
             <div class="panel">
-                <h3>生成</h3>
+                <h3><span class="panel-no">[01]</span>生成</h3>
                 <div class="upload-area" id="uploadArea">
                     <input type="file" id="fileInput" accept="image/*" hidden>
                     <div class="upload-placeholder">
@@ -41,7 +48,7 @@
             </div>
 
             <div class="panel">
-                <h3>模型列表</h3>
+                <h3><span class="panel-no">[02]</span>模型列表</h3>
                 <div class="model-list" id="modelList">
                     <div class="empty-state">暂无模型，上传图片生成第一个吧</div>
                 </div>
@@ -66,7 +73,7 @@
         <!-- 右侧属性面板 -->
         <aside class="sidebar right">
             <div class="panel">
-                <h3>材质</h3>
+                <h3><span class="panel-no">[03]</span>材质</h3>
                 <div class="form-group">
                     <label>颜色</label>
                     <input type="color" id="materialColor" value="#4a9eff">
@@ -82,7 +89,7 @@
             </div>
 
             <div class="panel">
-                <h3>灯光</h3>
+                <h3><span class="panel-no">[04]</span>灯光</h3>
                 <div class="form-group">
                     <label>环境光强度: <span id="ambientValue">0.6</span></label>
                     <input type="range" id="ambientSlider" min="0" max="2" step="0.01" value="0.6">
@@ -94,12 +101,13 @@
             </div>
 
             <div class="panel">
-                <h3>导出</h3>
+                <h3><span class="panel-no">[05]</span>导出</h3>
                 <button class="btn" id="exportGlbBtn">导出 GLB</button>
                 <button class="btn" id="exportObjBtn">导出 OBJ</button>
                 <button class="btn" id="exportPngBtn">导出截图 PNG</button>
             </div>
         </aside>
+        </div><!-- /app-main -->
     </div>
 
     <script src="main.js"></script>
