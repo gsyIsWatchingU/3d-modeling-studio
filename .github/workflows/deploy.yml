@@ -21,9 +21,10 @@ jobs:
         run: npm ci --omit=dev
 
       - name: Syntax check
-        run: |
-          node --check server/index.js
-          node --check server/db.js
+        run: npm run check
+
+      - name: Test
+        run: npm test
 
       - name: Package release
         run: |
@@ -79,6 +80,8 @@ jobs:
         run: |
           set -euo pipefail
           # supervisor 的 socket 不在默认路径，必须带 -c
+          supervisorctl -c /workspace/etc/supervisord.conf reread
+          supervisorctl -c /workspace/etc/supervisord.conf update
           supervisorctl -c /workspace/etc/supervisord.conf \
             restart 3d-modeling-studio cloudflared-3d-modeling-studio
 

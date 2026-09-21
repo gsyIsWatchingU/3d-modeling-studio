@@ -25,7 +25,7 @@ npm install --production
 ```bash
 cd deploy
 cp .env.example .env
-# 编辑 .env 填入你的SPU服务地址
+# 编辑 .env 填入 Forge3D 与通知配置
 vi .env
 ```
 

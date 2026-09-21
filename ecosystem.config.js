@@ -13,8 +13,9 @@ module.exports = {
       DB_PATH: '/data/3d-modeling-studio/db.json',
       UPLOAD_DIR: '/data/3d-modeling-studio/uploads',
       MODEL_DIR: '/data/3d-modeling-studio/models',
-      SPU_API_URL: 'http://your-spu-gpu-service:8000/api/generate',
-      SPU_API_KEY: 'your-api-key-here'
+      SPU_PROVIDER: 'forge3d',
+      SPU_API_URL: 'http://127.0.0.1:8091/v1/jobs',
+      FORGE3D_ASSET_ROOT: '/workspace/3d-assets'
     }
   }]
 };

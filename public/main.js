@@ -1,505 +1,590 @@
-// 3D建模工作室 - 前端逻辑
-let scene, camera, renderer, controls;
-let currentModel = null;
-let ambientLight, dirLight;
-let currentModelId = null;
-let wireframeMode = false;
-let models = [];
-
-// API基础路径
 const API_BASE = '/api';
-
-// 与 style.css 的 --pixel-* 令牌保持一致
-const THEME = {
-    stage: 0xecedE8,        // 视口背景（中性浅灰工作台）
-    ground: 0xf7f7f2,       // 地面
-    gridCenter: 0x858d86,   // 网格中心线
-    gridLine: 0xb8beb8,     // 普通网格线
-    demoMaterial: 0xc8cbc5  // 默认演示模型（中性 clay，品牌绿留给 UI 状态）
+const state = {
+    images: [],
+    bootstrap: null,
+    jobs: [],
+    activeJobId: new URLSearchParams(location.search).get('job') || localStorage.getItem('activeJobId') || '',
+    currentModel: null,
+    wireframe: false,
+    polling: false
 };
 
-// 场景可选：?scene=light 或 0xRRGGBB
-const _sceneParam = new URLSearchParams(location.search).get('scene');
+let scene;
+let camera;
+let renderer;
+let controls;
+let ambientLight;
+let directionalLight;
 
-// ============ 轻量弹窗（替代原生 alert） ============
-// 原生 alert 无法套主题，且会阻塞渲染循环；这里用像素风方角面板
-function showToast(message, options = {}) {
-    const dialog = document.createElement('div');
-    dialog.className = 'pixel-modal-backdrop';
-    dialog.setAttribute('role', 'alertdialog');
-    dialog.setAttribute('aria-modal', 'true');
-    dialog.setAttribute('aria-label', '提示');
+const statusLabels = {
+    queued: '排队中',
+    retry_wait: '等待重试',
+    generating: '生成中',
+    downloading: '保存中',
+    validating: '校验中',
+    succeeded: '已完成',
+    failed: '失败'
+};
 
-    const panel = document.createElement('div');
-    panel.className = 'pixel-modal';
-
-    const title = document.createElement('h4');
-    title.textContent = options.title || '提示';
-
-    const body = document.createElement('p');
-    body.textContent = String(message);
-
-    const okBtn = document.createElement('button');
-    okBtn.type = 'button';
-    okBtn.className = 'btn primary';
-    okBtn.textContent = '确定';
-
-    panel.append(title, body, okBtn);
-    dialog.append(panel);
-    document.body.append(dialog);
-
-    let closed = false;
-    const lastFocused = document.activeElement;
-
-    function close() {
-        if (closed) return;
-        closed = true;
-        document.removeEventListener('keydown', onKeydown);
-        dialog.remove();
-        if (lastFocused && lastFocused.focus) lastFocused.focus();
-    }
-
-    function onKeydown(e) {
-        if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            close();
-        }
-    }
-
-    okBtn.addEventListener('click', close);
-    dialog.addEventListener('click', (e) => {
-        if (e.target === dialog) close();
-    });
-    document.addEventListener('keydown', onKeydown);
-
-    okBtn.focus();
-
-    return close;
+async function api(path, options = {}) {
+    const response = await fetch(`${API_BASE}${path}`, options);
+    const text = await response.text();
+    let payload;
+    try { payload = text ? JSON.parse(text) : {}; } catch { throw new Error(`服务器返回异常（HTTP ${response.status}）`); }
+    if (!response.ok || payload.success === false) throw new Error(payload.error || `请求失败（HTTP ${response.status}）`);
+    return payload.data ?? payload;
 }
 
-// ============ Three.js 场景 ============
+function showToast(message, isError = false) {
+    const toast = document.getElementById('toast');
+    toast.textContent = message;
+    toast.classList.toggle('error', isError);
+    toast.hidden = false;
+    clearTimeout(showToast.timer);
+    showToast.timer = setTimeout(() => { toast.hidden = true; }, 4500);
+}
+
 function initScene() {
-    const container = document.querySelector('.viewport');
     const canvas = document.getElementById('canvas');
-
+    const viewport = document.querySelector('.viewport');
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(THEME.stage);
-    // 浅色场景里雾会把远处模型洗白、直接吃掉对比度，这里给得很轻
-    scene.fog = new THREE.Fog(THEME.stage, 28, 60);
-
-    if (_sceneParam === 'light') {
-        scene.fog = null;
-    }
-
-    camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 1000);
-    camera.position.set(3, 3, 5);
-
-    renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    renderer.setSize(container.clientWidth, container.clientHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
+    scene.background = new THREE.Color(0xf4f5ef);
+    camera = new THREE.PerspectiveCamera(45, viewport.clientWidth / viewport.clientHeight, 0.1, 1000);
+    camera.position.set(3.2, 2.8, 5.2);
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(viewport.clientWidth, viewport.clientHeight);
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-
+    renderer.outputEncoding = THREE.sRGBEncoding;
     controls = new THREE.OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
-
-    // 灯光：弱环境光 + 稍强主光，靠明暗关系而不是整体提亮来塑造体积
-    ambientLight = new THREE.AmbientLight(0xffffff, 0.38);
+    controls.dampingFactor = 0.08;
+    controls.target.set(0, 1, 0);
+    ambientLight = new THREE.HemisphereLight(0xffffff, 0xb8c1b6, 1.25);
     scene.add(ambientLight);
-
-    dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
-    dirLight.position.set(5, 10, 5);
-    dirLight.castShadow = true;
-    scene.add(dirLight);
-
-    // 地面
-    const groundGeometry = new THREE.PlaneGeometry(20, 20);
-    const groundMaterial = new THREE.MeshStandardMaterial({
-        color: THEME.ground,
-        roughness: 0.92,
-        metalness: 0
-    });
-    const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+    directionalLight = new THREE.DirectionalLight(0xffffff, 1.4);
+    directionalLight.position.set(4, 8, 5);
+    directionalLight.castShadow = true;
+    scene.add(directionalLight);
+    const ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(20, 20),
+        new THREE.MeshStandardMaterial({ color: 0xe8ebe5, roughness: 1 })
+    );
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     scene.add(ground);
-
-    const gridHelper = new THREE.GridHelper(20, 20, THEME.gridCenter, THEME.gridLine);
-    scene.add(gridHelper);
-
-    window.addEventListener('resize', onWindowResize);
+    scene.add(new THREE.GridHelper(20, 20, 0x97b39b, 0xc4ccc3));
+    window.addEventListener('resize', resizeRenderer);
     animate();
 }
 
-function onWindowResize() {
-    const container = document.querySelector('.viewport');
-    camera.aspect = container.clientWidth / container.clientHeight;
+function resizeRenderer() {
+    const viewport = document.querySelector('.viewport');
+    if (!viewport?.clientWidth || !viewport?.clientHeight) return;
+    camera.aspect = viewport.clientWidth / viewport.clientHeight;
     camera.updateProjectionMatrix();
-    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.setSize(viewport.clientWidth, viewport.clientHeight);
 }
 
 function animate() {
     requestAnimationFrame(animate);
-    // 阻尼模式需要每帧 update() 来应用旋转/平移输入；只按 autoRotate 判断会让手动拖拽失效
     controls.update();
     renderer.render(scene, camera);
 }
 
-// ============ 模型加载 ============
-function loadDemoModel() {
-    const geometry = new THREE.BoxGeometry(1, 1, 1);
-    const material = new THREE.MeshStandardMaterial({
-        color: THEME.demoMaterial,
-        roughness: 0.7,
-        metalness: 0.05
+function disposeCurrentModel() {
+    if (!state.currentModel) return;
+    scene.remove(state.currentModel);
+    state.currentModel.traverse(child => {
+        if (!child.isMesh) return;
+        child.geometry?.dispose?.();
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        materials.forEach(material => material?.dispose?.());
     });
-    const cube = new THREE.Mesh(geometry, material);
-    cube.castShadow = true;
-    cube.position.y = 0.5;
-    currentModel = cube;
-    scene.add(cube);
+    state.currentModel = null;
 }
 
-async function loadModelFromUrl(url) {
-    const loader = new THREE.GLTFLoader();
-    
-    if (currentModel) scene.remove(currentModel);
-
-    return new Promise((resolve, reject) => {
-        loader.load(url, (gltf) => {
-            currentModel = gltf.scene;
-            
-            const box = new THREE.Box3().setFromObject(currentModel);
-            const size = box.getSize(new THREE.Vector3());
+async function loadModel(url) {
+    document.getElementById('emptyView').hidden = true;
+    document.getElementById('viewerToolbar').hidden = false;
+    document.getElementById('downloadModelBtn').href = url;
+    disposeCurrentModel();
+    await new Promise((resolve, reject) => {
+        new THREE.GLTFLoader().load(url, gltf => {
+            const model = gltf.scene;
+            const firstBox = new THREE.Box3().setFromObject(model);
+            const size = firstBox.getSize(new THREE.Vector3());
+            const maxDimension = Math.max(size.x, size.y, size.z) || 1;
+            model.scale.setScalar(2.6 / maxDimension);
+            const box = new THREE.Box3().setFromObject(model);
             const center = box.getCenter(new THREE.Vector3());
-            
-            const maxDim = Math.max(size.x, size.y, size.z);
-            const scale = 2 / maxDim;
-            currentModel.scale.setScalar(scale);
-            currentModel.position.x = -center.x * scale;
-            currentModel.position.z = -center.z * scale;
-            currentModel.position.y = -center.y * scale + 1;
-
-            currentModel.traverse((child) => {
+            model.position.x -= center.x;
+            model.position.z -= center.z;
+            model.position.y -= box.min.y;
+            model.traverse(child => {
                 if (child.isMesh) {
                     child.castShadow = true;
                     child.receiveShadow = true;
                 }
             });
-
-            scene.add(currentModel);
+            state.currentModel = model;
+            scene.add(model);
+            controls.target.set(0, Math.min(1.2, (box.max.y - box.min.y) / 2), 0);
+            controls.update();
             resolve();
         }, undefined, reject);
     });
 }
 
-// ============ 模型列表 ============
-async function fetchModels() {
-    try {
-        const res = await fetch(`${API_BASE}/models`);
-        const data = await res.json();
-        models = data.data || [];
-        renderModelList();
-    } catch (error) {
-        console.error('获取模型列表失败:', error);
-    }
+function formatBytes(bytes) {
+    if (!bytes) return '0 B';
+    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function renderModelList() {
-    const list = document.getElementById('modelList');
-    
-    if (models.length === 0) {
-        list.innerHTML = '<div class="empty-state">暂无模型，上传图片生成第一个吧</div>';
-        return;
+function addImages(fileList) {
+    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+    for (const file of fileList) {
+        if (state.images.length >= 6) {
+            showToast('最多上传 6 张参考图', true);
+            break;
+        }
+        if (!allowed.includes(file.type)) {
+            showToast(`${file.name} 不是支持的图片格式`, true);
+            continue;
+        }
+        if (file.size > 10 * 1024 * 1024) {
+            showToast(`${file.name} 超过 10 MB`, true);
+            continue;
+        }
+        const duplicate = state.images.some(item => item.file.name === file.name && item.file.size === file.size && item.file.lastModified === file.lastModified);
+        if (!duplicate) state.images.push({ file, url: URL.createObjectURL(file) });
     }
+    renderImages();
+    updateGenerateState();
+}
 
-    list.innerHTML = models.map(m => `
-        <div class="model-item ${m.id === currentModelId ? 'active' : ''}" data-id="${m.id}">
-            <div class="model-item-name">${m.name}</div>
-            <div class="model-item-time">
-                ${new Date(m.created_at).toLocaleString()}
-                <span class="status status-${m.status}">${getStatusText(m.status)}</span>
-            </div>
-        </div>
-    `).join('');
-
-    list.querySelectorAll('.model-item').forEach(item => {
-        item.addEventListener('click', () => selectModel(parseInt(item.dataset.id)));
+function renderImages() {
+    const grid = document.getElementById('imageGrid');
+    grid.replaceChildren();
+    state.images.forEach((item, index) => {
+        const card = document.createElement('div');
+        card.className = 'image-card';
+        const image = document.createElement('img');
+        image.src = item.url;
+        image.alt = `参考图 ${index + 1}`;
+        const badge = document.createElement('span');
+        badge.className = 'image-index';
+        badge.textContent = `${index + 1} · ${formatBytes(item.file.size)}`;
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.textContent = '×';
+        remove.title = `删除 ${item.file.name}`;
+        remove.addEventListener('click', () => {
+            URL.revokeObjectURL(item.url);
+            state.images.splice(index, 1);
+            renderImages();
+            updateGenerateState();
+        });
+        card.append(image, badge, remove);
+        grid.append(card);
     });
 }
 
-function getStatusText(status) {
-    const map = { pending: '待生成', generating: '生成中', completed: '已完成', failed: '失败' };
-    return map[status] || status;
+function updateGenerateState() {
+    const button = document.getElementById('generateBtn');
+    const serviceReady = Boolean(state.bootstrap?.provider?.configured);
+    button.disabled = !serviceReady || state.images.length === 0 || button.dataset.busy === 'true';
 }
 
-async function selectModel(id) {
-    currentModelId = id;
-    const model = models.find(m => m.id === id);
-    
-    if (model && model.model_file) {
-        try {
-            await loadModelFromUrl(model.model_file);
-        } catch (error) {
-            console.error('加载模型失败:', error);
-        }
+function fillSelect(select, items, selected) {
+    select.replaceChildren();
+    for (const item of items) {
+        const option = document.createElement('option');
+        option.value = item.id;
+        option.textContent = item.description ? `${item.name} · ${item.description}` : item.name;
+        option.selected = item.id === selected;
+        select.append(option);
     }
-    
-    renderModelList();
 }
 
-// ============ 上传和生成 ============
-function initUpload() {
+function applyBootstrap(data) {
+    state.bootstrap = data;
+    const provider = data.provider;
+    const badge = document.getElementById('serviceBadge');
+    const notice = document.getElementById('serviceNotice');
+    badge.textContent = provider.configured ? '建模服务正常' : '建模服务未配置';
+    badge.className = `service-badge ${provider.configured ? 'ready' : 'error'}`;
+    notice.textContent = provider.configured ? '建模服务已就绪，提交后会在后台运行。' : '建模服务尚未配置，请打开右上角“设置”。';
+    notice.classList.toggle('ready', provider.configured);
+    fillSelect(document.getElementById('assetKindSelect'), data.asset_kinds, 'prop');
+    fillSelect(document.getElementById('profileSelect'), data.profiles, 'xhs_mobile');
+    const defaultIds = data.settings.default_skill_ids || [data.settings.default_skill_id].filter(Boolean);
+    const defaultSkills = data.skills.filter(skill => defaultIds.includes(skill.id));
+    document.getElementById('defaultSkillName').textContent = defaultSkills.map(skill => skill.name).join(' + ') || '未设置';
+    renderExtraSkillSelect(data.skills, defaultIds);
+    renderSkillManager(data.skills, defaultIds);
+    applyNotificationStatus(data.notifications);
+    applySettingsForms(data);
+    updateGenerateState();
+}
+
+function renderExtraSkillSelect(skills, defaultIds) {
+    const select = document.getElementById('extraSkillSelect');
+    const current = select.value;
+    select.replaceChildren();
+    const empty = document.createElement('option');
+    empty.value = '';
+    empty.textContent = '不使用';
+    select.append(empty);
+    for (const skill of skills.filter(item => !defaultIds.includes(item.id))) {
+        const option = document.createElement('option');
+        option.value = skill.id;
+        option.textContent = skill.name;
+        select.append(option);
+    }
+    if ([...select.options].some(option => option.value === current)) select.value = current;
+}
+
+function applyNotificationStatus(notifications) {
+    const status = notifications.status;
+    document.querySelectorAll('.channel-input').forEach(input => {
+        const channel = status[input.value];
+        input.disabled = !channel?.configured;
+        if (input.disabled) input.checked = false;
+        const label = document.querySelector(`[data-channel-status="${input.value}"]`);
+        label.textContent = channel?.configured ? (channel.recipient || '已配置') : '未配置';
+    });
+}
+
+function applySettingsForms(data) {
+    document.getElementById('providerUrlInput').value = data.provider.api_url || '';
+    document.getElementById('providerUrlInput').disabled = data.provider.managed_by_environment;
+    document.getElementById('providerKeyInput').disabled = data.provider.managed_by_environment;
+    document.getElementById('saveProviderBtn').disabled = data.provider.managed_by_environment;
+    const email = data.notifications.editable.email;
+    document.getElementById('emailRecipientInput').value = '';
+    document.getElementById('emailRecipientInput').placeholder = email.recipient_configured ? '已配置，留空表示不修改' : 'name@example.com';
+    document.getElementById('smtpHostInput').value = '';
+    document.getElementById('smtpHostInput').placeholder = email.smtp_host_configured ? '已配置，留空表示不修改' : 'smtp.example.com';
+    document.getElementById('smtpPortInput').value = email.smtp_port || 465;
+    document.getElementById('smtpUserInput').value = '';
+    document.getElementById('smtpUserInput').placeholder = email.smtp_user_configured ? '已配置，留空表示不修改' : 'SMTP 用户名';
+    document.getElementById('smtpSecureInput').checked = email.smtp_secure !== false;
+    document.getElementById('smtpPassInput').placeholder = email.smtp_pass_configured ? '已配置，留空表示不修改' : '请输入 SMTP 密码';
+    document.getElementById('feishuWebhookInput').placeholder = data.notifications.editable.feishu.webhook_configured ? '已配置，留空表示不修改' : '粘贴飞书机器人 Webhook';
+    document.getElementById('wecomWebhookInput').placeholder = data.notifications.editable.wecom.webhook_configured ? '已配置，留空表示不修改' : '粘贴企业微信机器人 Webhook';
+}
+
+function renderSkillManager(skills, defaultIds) {
+    const manager = document.getElementById('skillManager');
+    manager.replaceChildren();
+    for (const skill of skills) {
+        const row = document.createElement('div');
+        row.className = 'skill-row';
+        const head = document.createElement('div');
+        head.className = 'skill-row-head';
+        const title = document.createElement('strong');
+        title.textContent = skill.name;
+        head.append(title);
+        if (defaultIds.includes(skill.id)) {
+            const badge = document.createElement('span');
+            badge.className = 'default-label';
+            badge.textContent = '固定';
+            head.append(badge);
+        }
+        const description = document.createElement('p');
+        description.textContent = skill.description || `${skill.content_length} 字 · v${skill.version}`;
+        const actions = document.createElement('div');
+        actions.className = 'skill-actions';
+        if (!skill.builtin) {
+            const toggleDefault = document.createElement('button');
+            toggleDefault.type = 'button';
+            toggleDefault.textContent = defaultIds.includes(skill.id) ? '取消固定' : '每次使用';
+            toggleDefault.addEventListener('click', () => toggleDefaultSkill(skill.id));
+            actions.append(toggleDefault);
+        }
+        if (!skill.builtin) {
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'danger';
+            remove.textContent = '删除';
+            remove.addEventListener('click', () => deleteSkill(skill.id));
+            actions.append(remove);
+        }
+        row.append(head, description, actions);
+        manager.append(row);
+    }
+}
+
+async function reloadBootstrap() {
+    const data = await api('/bootstrap');
+    applyBootstrap(data);
+}
+
+async function toggleDefaultSkill(skillId) {
+    try {
+        const current = state.bootstrap.settings.default_skill_ids || [state.bootstrap.settings.default_skill_id].filter(Boolean);
+        const next = current.includes(skillId) ? current.filter(id => id !== skillId) : [...current, skillId];
+        await api('/settings/default-skills', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ skill_ids: next }) });
+        await reloadBootstrap();
+        showToast('固定 Skill 已更新');
+    } catch (error) { showToast(error.message, true); }
+}
+
+async function deleteSkill(skillId) {
+    try {
+        await api(`/skills/${encodeURIComponent(skillId)}`, { method: 'DELETE' });
+        await reloadBootstrap();
+        showToast('Skill 已删除');
+    } catch (error) { showToast(error.message, true); }
+}
+
+function createJobCard(job) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `job-card ${job.id === state.activeJobId ? 'active' : ''}`;
+    const head = document.createElement('div');
+    head.className = 'job-card-head';
+    const titleWrap = document.createElement('div');
+    const title = document.createElement('strong');
+    title.textContent = job.name;
+    const time = document.createElement('time');
+    time.textContent = new Date(job.created_at).toLocaleString();
+    titleWrap.append(title, time);
+    const status = document.createElement('span');
+    status.className = `job-status ${job.status}`;
+    status.textContent = statusLabels[job.status] || job.status;
+    head.append(titleWrap, status);
+    const message = document.createElement('p');
+    message.textContent = `${job.id} · ${job.progress_message || '等待处理'}`;
+    button.append(head, message);
+    button.addEventListener('click', () => selectJob(job.id));
+    return button;
+}
+
+function renderJobList() {
+    const list = document.getElementById('jobList');
+    list.replaceChildren();
+    if (!state.jobs.length) {
+        const empty = document.createElement('div');
+        empty.className = 'empty-list';
+        empty.textContent = '还没有任务';
+        list.append(empty);
+        return;
+    }
+    state.jobs.forEach(job => list.append(createJobCard(job)));
+}
+
+function stageIndex(status) {
+    return { queued: 0, retry_wait: 0, generating: 1, downloading: 2, validating: 3, succeeded: 4, failed: -1 }[status] ?? 0;
+}
+
+async function renderActiveJob() {
+    const job = state.jobs.find(item => item.id === state.activeJobId);
+    const title = document.getElementById('activeJobTitle');
+    const chip = document.getElementById('activeJobStatus');
+    const message = document.getElementById('progressMessage');
+    const retry = document.getElementById('retryJobBtn');
+    const steps = [...document.querySelectorAll('#progressSteps li')];
+    steps.forEach(item => { item.className = ''; });
+    if (!job) {
+        title.textContent = '尚未提交任务';
+        chip.textContent = '等待开始';
+        chip.className = 'status-chip';
+        message.textContent = '完成左侧三步后，任务状态会显示在这里。';
+        retry.hidden = true;
+        return;
+    }
+    title.textContent = `${job.id} · ${job.name}`;
+    chip.textContent = statusLabels[job.status] || job.status;
+    chip.className = `status-chip ${job.status}`;
+    message.textContent = job.error?.message || job.progress_message || '正在处理';
+    retry.hidden = job.status !== 'failed';
+    const current = stageIndex(job.status);
+    steps.forEach((item, index) => {
+        if (job.status === 'failed' && index === Math.max(0, stageIndex(job.previous_status || 'generating'))) item.classList.add('error');
+        else if (job.status === 'succeeded' || index < current) item.classList.add('done');
+        else if (index === current) item.classList.add('active');
+    });
+    if (job.status === 'succeeded' && job.output?.model_file && document.getElementById('downloadModelBtn').href !== new URL(job.output.model_file, location.href).href) {
+        try { await loadModel(job.output.model_file); } catch (error) { showToast(`模型已生成，但浏览器加载失败：${error.message}`, true); }
+    }
+}
+
+async function selectJob(id) {
+    state.activeJobId = id;
+    localStorage.setItem('activeJobId', id);
+    const url = new URL(location.href);
+    url.searchParams.set('job', id);
+    history.replaceState(null, '', url);
+    renderJobList();
+    await renderActiveJob();
+}
+
+async function loadJobs(silent = false) {
+    if (state.polling) return;
+    state.polling = true;
+    try {
+        state.jobs = await api('/jobs?limit=40');
+        if (!state.activeJobId && state.jobs.length) state.activeJobId = state.jobs[0].id;
+        renderJobList();
+        await renderActiveJob();
+    } catch (error) {
+        if (!silent) showToast(error.message, true);
+    } finally {
+        state.polling = false;
+    }
+}
+
+async function submitJob() {
+    const button = document.getElementById('generateBtn');
+    if (!state.images.length) return showToast('请先上传至少一张参考图', true);
+    button.dataset.busy = 'true';
+    button.querySelector('.btn-text').textContent = '正在提交…';
+    button.querySelector('.loading').hidden = false;
+    updateGenerateState();
+    const form = new FormData();
+    state.images.forEach(item => form.append('images', item.file));
+    form.append('name', document.getElementById('modelNameInput').value);
+    form.append('prompt', document.getElementById('promptInput').value);
+    form.append('asset_kind', document.getElementById('assetKindSelect').value);
+    form.append('profile', document.getElementById('profileSelect').value);
+    const extraSkill = document.getElementById('extraSkillSelect').value;
+    form.append('skill_ids', JSON.stringify(extraSkill ? [extraSkill] : []));
+    form.append('inline_skill', document.getElementById('inlineSkillInput').value);
+    const channels = [...document.querySelectorAll('.channel-input:checked')].map(input => input.value);
+    form.append('channels', JSON.stringify(channels));
+    try {
+        const response = await fetch(`${API_BASE}/jobs`, { method: 'POST', body: form });
+        const payload = await response.json();
+        if (!response.ok || payload.success === false) throw new Error(payload.error || '任务提交失败');
+        const job = payload.data;
+        state.jobs.unshift(job);
+        await selectJob(job.id);
+        showToast(`任务 ${job.id} 已提交，可以关闭页面等待通知`);
+        await loadJobs(true);
+    } catch (error) {
+        showToast(error.message, true);
+    } finally {
+        button.dataset.busy = 'false';
+        button.querySelector('.btn-text').textContent = '开始建模';
+        button.querySelector('.loading').hidden = true;
+        updateGenerateState();
+    }
+}
+
+async function retryActiveJob() {
+    if (!state.activeJobId) return;
+    try {
+        await api(`/jobs/${encodeURIComponent(state.activeJobId)}/retry`, { method: 'POST' });
+        showToast('任务已重新进入队列');
+        await loadJobs();
+    } catch (error) { showToast(error.message, true); }
+}
+
+async function saveProvider() {
+    try {
+        await api('/config/spu', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider: 'forge3d', api_url: document.getElementById('providerUrlInput').value, api_key: document.getElementById('providerKeyInput').value })
+        });
+        document.getElementById('providerKeyInput').value = '';
+        await reloadBootstrap();
+        showToast('建模服务已保存');
+    } catch (error) { showToast(error.message, true); }
+}
+
+async function addSkill() {
+    const form = new FormData();
+    const file = document.getElementById('skillFileInput').files[0];
+    if (file) form.append('skill_file', file);
+    form.append('name', document.getElementById('skillNameInput').value);
+    form.append('content', document.getElementById('skillContentInput').value);
+    try {
+        await api('/skills', { method: 'POST', body: form });
+        document.getElementById('skillNameInput').value = '';
+        document.getElementById('skillFileInput').value = '';
+        document.getElementById('skillContentInput').value = '';
+        await reloadBootstrap();
+        showToast('Skill 已保存，可设为默认或本次使用');
+    } catch (error) { showToast(error.message, true); }
+}
+
+async function saveNotifications() {
+    const body = {
+        email: {
+            recipient: document.getElementById('emailRecipientInput').value,
+            smtp_host: document.getElementById('smtpHostInput').value,
+            smtp_port: Number(document.getElementById('smtpPortInput').value),
+            smtp_secure: document.getElementById('smtpSecureInput').checked,
+            smtp_user: document.getElementById('smtpUserInput').value,
+            smtp_pass: document.getElementById('smtpPassInput').value
+        },
+        feishu: { webhook: document.getElementById('feishuWebhookInput').value },
+        wecom: { webhook: document.getElementById('wecomWebhookInput').value }
+    };
+    try {
+        await api('/notification-config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        ['smtpPassInput', 'feishuWebhookInput', 'wecomWebhookInput'].forEach(id => { document.getElementById(id).value = ''; });
+        await reloadBootstrap();
+        showToast('通知设置已保存');
+    } catch (error) { showToast(error.message, true); }
+}
+
+async function testNotification(channel) {
+    try {
+        await api('/notification-config/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channel }) });
+        showToast('测试通知已发送');
+    } catch (error) { showToast(error.message, true); }
+}
+
+function bindEvents() {
     const uploadArea = document.getElementById('uploadArea');
     const fileInput = document.getElementById('fileInput');
-    const previewImg = document.getElementById('previewImg');
-
     uploadArea.addEventListener('click', () => fileInput.click());
-
-    uploadArea.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        uploadArea.classList.add('dragover');
-    });
-
-    uploadArea.addEventListener('dragleave', () => {
-        uploadArea.classList.remove('dragover');
-    });
-
-    uploadArea.addEventListener('drop', (e) => {
-        e.preventDefault();
-        uploadArea.classList.remove('dragover');
-        const file = e.dataTransfer.files[0];
-        if (file && file.type.startsWith('image/')) handleImageFile(file);
-    });
-
-    fileInput.addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (file) handleImageFile(file);
-    });
-
-    function handleImageFile(file) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            previewImg.src = e.target.result;
-            previewImg.hidden = false;
-            uploadArea.querySelector('.upload-placeholder').style.display = 'none';
-        };
-        reader.readAsDataURL(file);
-        window.selectedImage = file;
-    }
-}
-
-async function generateModel() {
-    const generateBtn = document.getElementById('generateBtn');
-    const btnText = generateBtn.querySelector('.btn-text');
-    const loading = generateBtn.querySelector('.loading');
-    const prompt = document.getElementById('promptInput').value;
-
-    if (!window.selectedImage) {
-        showToast('请先上传一张图片', { title: '缺少输入' });
-        return;
-    }
-
-    generateBtn.disabled = true;
-    btnText.textContent = '上传中...';
-    loading.hidden = false;
-
-    try {
-        // 1. 上传图片
-        const formData = new FormData();
-        formData.append('image', window.selectedImage);
-        formData.append('name', window.selectedImage.name);
-        formData.append('prompt', prompt);
-
-        const uploadRes = await fetch(`${API_BASE}/models/upload`, {
-            method: 'POST',
-            body: formData
+    uploadArea.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') fileInput.click(); });
+    uploadArea.addEventListener('dragover', event => { event.preventDefault(); uploadArea.classList.add('dragover'); });
+    uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+    uploadArea.addEventListener('drop', event => { event.preventDefault(); uploadArea.classList.remove('dragover'); addImages(event.dataTransfer.files); });
+    fileInput.addEventListener('change', () => { addImages(fileInput.files); fileInput.value = ''; });
+    document.getElementById('promptInput').addEventListener('input', event => { document.getElementById('promptCount').textContent = `${event.target.value.length}/1000`; });
+    document.getElementById('generateBtn').addEventListener('click', submitJob);
+    document.getElementById('refreshJobsBtn').addEventListener('click', () => loadJobs());
+    document.getElementById('retryJobBtn').addEventListener('click', retryActiveJob);
+    document.getElementById('openSettingsBtn').addEventListener('click', () => document.getElementById('settingsDialog').showModal());
+    document.getElementById('closeSettingsBtn').addEventListener('click', () => document.getElementById('settingsDialog').close());
+    document.getElementById('saveProviderBtn').addEventListener('click', saveProvider);
+    document.getElementById('addSkillBtn').addEventListener('click', addSkill);
+    document.getElementById('saveNotificationsBtn').addEventListener('click', saveNotifications);
+    document.querySelectorAll('[data-test-channel]').forEach(button => button.addEventListener('click', () => testNotification(button.dataset.testChannel)));
+    document.getElementById('resetCameraBtn').addEventListener('click', () => { camera.position.set(3.2, 2.8, 5.2); controls.target.set(0, 1, 0); controls.update(); });
+    document.getElementById('wireframeBtn').addEventListener('click', event => {
+        state.wireframe = !state.wireframe;
+        event.currentTarget.classList.toggle('active', state.wireframe);
+        state.currentModel?.traverse(child => {
+            if (!child.isMesh) return;
+            const materials = Array.isArray(child.material) ? child.material : [child.material];
+            materials.forEach(material => { material.wireframe = state.wireframe; });
         });
-        const uploadData = await uploadRes.json();
-        
-        if (!uploadData.success) throw new Error(uploadData.error);
-
-        const modelId = uploadData.data.id;
-        btnText.textContent = '生成中...';
-
-        // 2. 调用生成
-        const genRes = await fetch(`${API_BASE}/models/${modelId}/generate`, {
-            method: 'POST'
-        });
-        const genData = await genRes.json();
-        
-        if (!genData.success) throw new Error(genData.error);
-
-        btnText.textContent = '已提交，等待生成...';
-        
-        // 3. 轮询状态
-        pollModelStatus(modelId);
-
-    } catch (error) {
-        console.error('生成失败:', error);
-        showToast(`生成失败: ${error.message}`, { title: '错误' });
-    } finally {
-        generateBtn.disabled = false;
-        btnText.textContent = '生成3D模型';
-        loading.hidden = true;
-    }
-}
-
-async function pollModelStatus(modelId) {
-    const interval = setInterval(async () => {
-        try {
-            const res = await fetch(`${API_BASE}/models/${modelId}`);
-            const data = await res.json();
-            const model = data.data;
-
-            if (model.status === 'completed') {
-                clearInterval(interval);
-                await fetchModels();
-                await selectModel(modelId);
-                showToast('模型生成完成', { title: '完成' });
-            } else if (model.status === 'failed') {
-                clearInterval(interval);
-                await fetchModels();
-                showToast('模型生成失败', { title: '错误' });
-            }
-        } catch (error) {
-            console.error('轮询状态失败:', error);
-        }
-    }, 1000);
-}
-
-// ============ SPU配置 ============
-async function loadSpuConfig() {
-    try {
-        const res = await fetch(`${API_BASE}/config/spu`);
-        const data = await res.json();
-        if (data.data) {
-            document.getElementById('spuApiUrl').value = data.data.api_url || '';
-            document.getElementById('spuApiKey').value = data.data.api_key || '';
-        }
-    } catch (error) {
-        console.error('加载SPU配置失败:', error);
-    }
-}
-
-async function saveSpuConfig() {
-    const apiUrl = document.getElementById('spuApiUrl').value;
-    const apiKey = document.getElementById('spuApiKey').value;
-
-    try {
-        const res = await fetch(`${API_BASE}/config/spu`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ api_url: apiUrl, api_key: apiKey })
-        });
-        const data = await res.json();
-        if (data.success) {
-            showToast('SPU 配置已保存', { title: '完成' });
-        }
-    } catch (error) {
-        showToast('保存失败: ' + error.message, { title: '错误' });
-    }
-}
-
-// ============ 材质/灯光/工具栏 ============
-function initMaterialControls() {
-    document.getElementById('materialColor').addEventListener('input', (e) => {
-        if (currentModel) {
-            currentModel.traverse(child => {
-                if (child.isMesh && child.material.color) child.material.color.set(e.target.value);
-            });
-        }
     });
-
-    document.getElementById('roughnessSlider').addEventListener('input', (e) => {
-        document.getElementById('roughnessValue').textContent = e.target.value;
-        if (currentModel) {
-            currentModel.traverse(child => {
-                if (child.isMesh && 'roughness' in child.material) {
-                    child.material.roughness = parseFloat(e.target.value);
-                }
-            });
-        }
-    });
-
-    document.getElementById('metalnessSlider').addEventListener('input', (e) => {
-        document.getElementById('metalnessValue').textContent = e.target.value;
-        if (currentModel) {
-            currentModel.traverse(child => {
-                if (child.isMesh && 'metalness' in child.material) {
-                    child.material.metalness = parseFloat(e.target.value);
-                }
-            });
-        }
-    });
-}
-
-function initLightControls() {
-    document.getElementById('ambientSlider').addEventListener('input', (e) => {
-        document.getElementById('ambientValue').textContent = e.target.value;
-        ambientLight.intensity = parseFloat(e.target.value);
-    });
-
-    document.getElementById('dirSlider').addEventListener('input', (e) => {
-        document.getElementById('dirValue').textContent = e.target.value;
-        dirLight.intensity = parseFloat(e.target.value);
-    });
-}
-
-function initToolbar() {
-    document.getElementById('resetCameraBtn').addEventListener('click', () => {
-        camera.position.set(3, 3, 5);
-        controls.target.set(0, 0, 0);
-        controls.update();
-    });
-
-    document.getElementById('wireframeBtn').addEventListener('click', (e) => {
-        wireframeMode = !wireframeMode;
-        e.currentTarget.classList.toggle('active', wireframeMode);
-        if (currentModel) {
-            currentModel.traverse(child => {
-                if (child.isMesh && 'wireframe' in child.material) {
-                    child.material.wireframe = wireframeMode;
-                }
-            });
-        }
-    });
-
-    document.getElementById('autoRotateBtn').addEventListener('click', (e) => {
+    document.getElementById('autoRotateBtn').addEventListener('click', event => {
         controls.autoRotate = !controls.autoRotate;
-        e.currentTarget.classList.toggle('active', controls.autoRotate);
+        event.currentTarget.classList.toggle('active', controls.autoRotate);
     });
 }
 
-function initExport() {
-    document.getElementById('exportPngBtn').addEventListener('click', () => {
-        renderer.render(scene, camera);
-        const link = document.createElement('a');
-        link.download = 'model-screenshot.png';
-        link.href = renderer.domElement.toDataURL('image/png');
-        link.click();
-    });
-
-    const notReady = (feature) => () => {
-        showToast(`${feature} 尚未接入导出流程`, { title: '未实现' });
-    };
-    document.getElementById('exportGlbBtn').addEventListener('click', notReady('导出 GLB'));
-    document.getElementById('exportObjBtn').addEventListener('click', notReady('导出 OBJ'));
-}
-
-// ============ 初始化 ============
-document.addEventListener('DOMContentLoaded', async () => {
+async function init() {
     initScene();
-    initUpload();
-    initMaterialControls();
-    initLightControls();
-    initToolbar();
-    initExport();
-    loadDemoModel();
-    await loadSpuConfig();
-    await fetchModels();
+    bindEvents();
+    try {
+        await reloadBootstrap();
+        await loadJobs();
+    } catch (error) {
+        showToast(`初始化失败：${error.message}`, true);
+    }
+    setInterval(() => loadJobs(true), 3000);
+}
 
-    document.getElementById('generateBtn').addEventListener('click', generateModel);
-    document.getElementById('saveConfigBtn').addEventListener('click', saveSpuConfig);
-});
+document.addEventListener('DOMContentLoaded', init);
