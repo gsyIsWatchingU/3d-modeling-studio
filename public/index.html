@@ -22,6 +22,7 @@
                 <span class="user-chip" id="currentUser" hidden></span>
                 <button class="btn compact" id="logoutBtn" type="button" hidden>退出</button>
                 <button class="btn compact" id="openSettingsBtn" type="button">设置</button>
+                <button class="btn compact" id="openProductionBtn" type="button">游戏制作流</button>
             </div>
         </header>
 
@@ -64,6 +65,11 @@
                             <label for="profileSelect">质量档位</label>
                             <select id="profileSelect"></select>
                         </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="productionPlanSelect">关联制作计划 <span>可选</span></label>
+                        <select id="productionPlanSelect"><option value="">独立建模</option></select>
+                        <p class="step-copy" id="productionFixedSkills">自动使用制作通则、通用建模和道具规范。</p>
                     </div>
                     <div class="skill-summary">
                         <span>我的每次必用 Skill</span>
@@ -241,8 +247,34 @@
         </div>
     </dialog>
 
+    <dialog class="settings-dialog" id="productionDialog">
+        <div class="dialog-head">
+            <div><span class="eyebrow">固定 Skill · 按阶段使用</span><h2>游戏制作流</h2></div>
+            <button class="btn compact" id="closeProductionBtn" type="button">关闭</button>
+        </div>
+        <div class="production-layout">
+            <section class="settings-section">
+                <h3>制作计划</h3>
+                <p>保存项目目标和各阶段规范。剧本由 AI 按规范编写；模型可提交 GPU；音频与动画生成尚待接入。</p>
+                <div class="form-group"><label for="planNameInput">计划名称</label><input type="text" id="planNameInput" maxlength="80" placeholder="例如：第一关可玩切片"></div>
+                <div class="form-group"><label for="planBriefInput">游戏目标与约束</label><textarea id="planBriefInput" maxlength="2000" placeholder="描述玩法、平台、风格、角色与场景；已确定的设定请明确写出。"></textarea></div>
+                <div class="form-group"><label for="planProfileSelect">质量档位</label><select id="planProfileSelect"><option value="xhs_mobile">移动端标准</option><option value="steam_desktop">桌面高精度</option></select></div>
+                <button class="btn" id="createProductionPlanBtn" type="button">保存并固定本计划规范</button>
+                <div class="form-group"><label for="savedPlanSelect">查看已有计划</label><select id="savedPlanSelect"><option value="">当前标准规范</option></select></div>
+                <button class="text-button" id="downloadProductionPlanBtn" type="button" disabled>下载计划与 Skill 快照</button>
+            </section>
+            <section class="settings-section">
+                <h3>制作阶段</h3>
+                <div id="productionStages"></div>
+                <p id="productionPlanNotice">选择阶段查看固定规范。</p>
+                <div class="production-guide" id="productionGuide"></div>
+                <button class="text-button" id="copyProductionGuideBtn" type="button" disabled>复制本阶段规范给 AI</button>
+            </section>
+        </div>
+    </dialog>
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
     <script src="auth.js"></script>
     <script src="main.js"></script>
+    <script src="production.js"></script>
 </body>
 </html>

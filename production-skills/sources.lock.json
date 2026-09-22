@@ -1,0 +1,122 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "id": "skills-gamedev/blender-animation/SKILL.md",
+      "repo": "poorvith-mp/skills-gamedev",
+      "commit": "e8b87e9086fbf2322b1c216c2d2de85954bf4015",
+      "path": "vendor/skills-gamedev/blender-animation/SKILL.md",
+      "url": "https://github.com/poorvith-mp/skills-gamedev/blob/e8b87e9086fbf2322b1c216c2d2de85954bf4015/skills/blender-animation/SKILL.md",
+      "license": "MIT",
+      "sha256": "b3affbe76ea1b99ee5654dcf55173ac53ba060afa073716862c445c495c53998"
+    },
+    {
+      "id": "skills-gamedev/blender-modeling/SKILL.md",
+      "repo": "poorvith-mp/skills-gamedev",
+      "commit": "e8b87e9086fbf2322b1c216c2d2de85954bf4015",
+      "path": "vendor/skills-gamedev/blender-modeling/SKILL.md",
+      "url": "https://github.com/poorvith-mp/skills-gamedev/blob/e8b87e9086fbf2322b1c216c2d2de85954bf4015/skills/blender-modeling/SKILL.md",
+      "license": "MIT",
+      "sha256": "f32b7aa4e155cc41bff6d4f0da3cfb70b56ae0831fec6b3dda617f6dcdbbc0df"
+    },
+    {
+      "id": "skills-gamedev/game-audio/SKILL.md",
+      "repo": "poorvith-mp/skills-gamedev",
+      "commit": "e8b87e9086fbf2322b1c216c2d2de85954bf4015",
+      "path": "vendor/skills-gamedev/game-audio/SKILL.md",
+      "url": "https://github.com/poorvith-mp/skills-gamedev/blob/e8b87e9086fbf2322b1c216c2d2de85954bf4015/skills/game-audio/SKILL.md",
+      "license": "MIT",
+      "sha256": "0919be79350a5ca7fd74ee727f27612e398d5e42ba3edeaa51e4780b0f4e4087"
+    },
+    {
+      "id": "skills-gamedev/game-design/SKILL.md",
+      "repo": "poorvith-mp/skills-gamedev",
+      "commit": "e8b87e9086fbf2322b1c216c2d2de85954bf4015",
+      "path": "vendor/skills-gamedev/game-design/SKILL.md",
+      "url": "https://github.com/poorvith-mp/skills-gamedev/blob/e8b87e9086fbf2322b1c216c2d2de85954bf4015/skills/game-design/SKILL.md",
+      "license": "MIT",
+      "sha256": "161407d3e57544cbeec5fd451f8e6fc98b1be762bf821dee640a92c1b5a38b4d"
+    },
+    {
+      "id": "skills-gamedev/level-design/SKILL.md",
+      "repo": "poorvith-mp/skills-gamedev",
+      "commit": "e8b87e9086fbf2322b1c216c2d2de85954bf4015",
+      "path": "vendor/skills-gamedev/level-design/SKILL.md",
+      "url": "https://github.com/poorvith-mp/skills-gamedev/blob/e8b87e9086fbf2322b1c216c2d2de85954bf4015/skills/level-design/SKILL.md",
+      "license": "MIT",
+      "sha256": "92ac33b224c74a5262a3f432f69c86ea5b389e2d9622b42f1218c34402c5474e"
+    },
+    {
+      "id": "skills-gamedev/LICENSE",
+      "repo": "poorvith-mp/skills-gamedev",
+      "commit": "e8b87e9086fbf2322b1c216c2d2de85954bf4015",
+      "path": "vendor/skills-gamedev/LICENSE",
+      "url": "https://github.com/poorvith-mp/skills-gamedev/blob/e8b87e9086fbf2322b1c216c2d2de85954bf4015/LICENSE",
+      "license": "MIT",
+      "sha256": "57a3dcb95a920dcfe332da05f21ea5bb5ba38c87899a91d205fef57bca3d18dd"
+    },
+    {
+      "id": "skills-gamedev/narrative-design/SKILL.md",
+      "repo": "poorvith-mp/skills-gamedev",
+      "commit": "e8b87e9086fbf2322b1c216c2d2de85954bf4015",
+      "path": "vendor/skills-gamedev/narrative-design/SKILL.md",
+      "url": "https://github.com/poorvith-mp/skills-gamedev/blob/e8b87e9086fbf2322b1c216c2d2de85954bf4015/skills/narrative-design/SKILL.md",
+      "license": "MIT",
+      "sha256": "df8af22535c3f29f5bcadd4db8d6611b7849a4755d12623bc7bae767e24ab9c4"
+    },
+    {
+      "id": "skills-gamedev/playtesting/SKILL.md",
+      "repo": "poorvith-mp/skills-gamedev",
+      "commit": "e8b87e9086fbf2322b1c216c2d2de85954bf4015",
+      "path": "vendor/skills-gamedev/playtesting/SKILL.md",
+      "url": "https://github.com/poorvith-mp/skills-gamedev/blob/e8b87e9086fbf2322b1c216c2d2de85954bf4015/skills/playtesting/SKILL.md",
+      "license": "MIT",
+      "sha256": "6345ccebc36d80ee02a31145894f3a133d52bb85c1fa0f413483b4867e46c487"
+    },
+    {
+      "id": "skills-gamedev/tech-art/SKILL.md",
+      "repo": "poorvith-mp/skills-gamedev",
+      "commit": "e8b87e9086fbf2322b1c216c2d2de85954bf4015",
+      "path": "vendor/skills-gamedev/tech-art/SKILL.md",
+      "url": "https://github.com/poorvith-mp/skills-gamedev/blob/e8b87e9086fbf2322b1c216c2d2de85954bf4015/skills/tech-art/SKILL.md",
+      "license": "MIT",
+      "sha256": "a40bb7d3c4f89ac84297ed72f9b9696612dd3b3e4a48f6916a883f2d3b8b8873"
+    },
+    {
+      "id": "agency-agents/game-audio-engineer.md",
+      "repo": "msitarzewski/agency-agents",
+      "commit": "053ddbbf392a1688fc7043d81529f47ef2cf86c8",
+      "path": "vendor/agency-agents/game-audio-engineer.md",
+      "url": "https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/game-development/game-audio-engineer.md",
+      "license": "MIT",
+      "sha256": "d7a2eebd8c20021e543222bc962cb5a111924c5438e9f771a6db42d74cd19232"
+    },
+    {
+      "id": "agency-agents/level-designer.md",
+      "repo": "msitarzewski/agency-agents",
+      "commit": "053ddbbf392a1688fc7043d81529f47ef2cf86c8",
+      "path": "vendor/agency-agents/level-designer.md",
+      "url": "https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/game-development/level-designer.md",
+      "license": "MIT",
+      "sha256": "79c1d41b7dfc477f6f364ba8b6dec02dc0c081235fe8f8b61c8b062b5dc3b344"
+    },
+    {
+      "id": "agency-agents/LICENSE",
+      "repo": "msitarzewski/agency-agents",
+      "commit": "053ddbbf392a1688fc7043d81529f47ef2cf86c8",
+      "path": "vendor/agency-agents/LICENSE",
+      "url": "https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/LICENSE",
+      "license": "MIT",
+      "sha256": "9a45258434d5cedf0af73c9ad4771373701225038d246c49219026c33677f66f"
+    },
+    {
+      "id": "agency-agents/narrative-designer.md",
+      "repo": "msitarzewski/agency-agents",
+      "commit": "053ddbbf392a1688fc7043d81529f47ef2cf86c8",
+      "path": "vendor/agency-agents/narrative-designer.md",
+      "url": "https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/game-development/narrative-designer.md",
+      "license": "MIT",
+      "sha256": "7a5489c7b0502aa167030018137e3f349d2c32505c0ad7b9ec1de066a9a93f0d"
+    }
+  ]
+}

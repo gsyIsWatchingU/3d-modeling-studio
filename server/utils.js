@@ -50,6 +50,7 @@ function createSkillSnapshot(defaultSkill, extraSkills = [], inlineSkill = '') {
         name: skill.name,
         version: skill.version || 1,
         mandatory: defaults.some(item => item.id === skill.id),
+        ...(skill.production ? { production: true, sources: skill.sources || [] } : {}),
         content: skill.content,
         sha256: hashText(skill.content)
     }));
@@ -88,7 +89,7 @@ function safeStringList(value, allowlist) {
 function publicSkillSnapshot(snapshot) {
     if (!snapshot) return null;
     return {
-        entries: (snapshot.entries || []).map(item => ({ id: item.id, name: item.name, version: item.version, sha256: item.sha256, mandatory: Boolean(item.mandatory), temporary: Boolean(item.temporary) })),
+        entries: (snapshot.entries || []).map(item => ({ id: item.id, name: item.name, version: item.version, sha256: item.sha256, mandatory: Boolean(item.mandatory), temporary: Boolean(item.temporary), ...(item.production ? { production: true, sources: item.sources || [] } : {}) })),
         sha256: snapshot.sha256
     };
 }

@@ -225,8 +225,8 @@ function applyBootstrap(data) {
     badge.className = `service-badge ${provider.configured ? 'ready' : 'error'}`;
     notice.textContent = provider.configured ? '建模服务已就绪，提交后会在后台运行。' : '建模服务尚未配置，请打开右上角“设置”。';
     notice.classList.toggle('ready', provider.configured);
-    fillSelect(document.getElementById('assetKindSelect'), data.asset_kinds, 'prop');
-    fillSelect(document.getElementById('profileSelect'), data.profiles, 'xhs_mobile');
+    fillSelect(document.getElementById('assetKindSelect'), data.asset_kinds, document.getElementById('assetKindSelect').value || 'prop');
+    fillSelect(document.getElementById('profileSelect'), data.profiles, document.getElementById('profileSelect').value || 'xhs_mobile');
     const defaultIds = data.settings.default_skill_ids || [data.settings.default_skill_id].filter(Boolean);
     const defaultSkills = data.skills.filter(skill => defaultIds.includes(skill.id));
     document.getElementById('defaultSkillName').textContent = defaultSkills.map(skill => skill.name).join(' + ') || '未设置';
@@ -234,6 +234,8 @@ function applyBootstrap(data) {
     renderSkillManager(data.skills, defaultIds);
     applyNotificationStatus(data.notifications);
     applySettingsForms(data);
+    applyProductionPlanSelection();
+    updateProductionFixedSkills();
     updateGenerateState();
 }
 
@@ -496,6 +498,7 @@ async function submitJob() {
     form.append('prompt', document.getElementById('promptInput').value);
     form.append('asset_kind', document.getElementById('assetKindSelect').value);
     form.append('profile', document.getElementById('profileSelect').value);
+    form.append('production_plan_id', document.getElementById('productionPlanSelect').value);
     const extraSkill = document.getElementById('extraSkillSelect').value;
     form.append('skill_ids', JSON.stringify(extraSkill ? [extraSkill] : []));
     form.append('inline_skill', document.getElementById('inlineSkillInput').value);
@@ -706,6 +709,7 @@ async function init() {
     bindEvents();
     try {
         await reloadBootstrap();
+        await loadProductionPlans();
         await loadJobs();
     } catch (error) {
         showToast(`初始化失败：${error.message}`, true);

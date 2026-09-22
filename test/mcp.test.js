@@ -100,7 +100,22 @@ test('stdio MCP：账号隔离、固定 Skill、异步飞书通知、下载与�
     const client = await connect(a.token);
     const call = (name, args = {}) => client.callTool({ name, arguments: args });
     const data = response => JSON.parse(response.content[0].text);
-    assert.equal((await client.listTools()).tools.length, 5);
+    const toolNames = (await client.listTools()).tools.map(tool => tool.name);
+    for (const name of ['create_model', 'get_model', 'create_production_plan', 'get_production_guide', 'list_production_skills', 'list_production_plans']) assert.ok(toolNames.includes(name));
+    const catalog = data(await call('list_production_skills'));
+    assert.equal(catalog.stages.length, 9);
+    assert.equal(catalog.stages.find(stage => stage.id === 'audio').execution, 'specification');
+    const planResult = await call('create_production_plan', { name: '首关测试', brief: '制作木椅道具，用于房间中的观察线索。', profile: 'xhs_mobile' });
+    assert.ok(!planResult.isError, planResult.content[0].text);
+    const productionPlan = data(planResult);
+    assert.equal(data(await call('list_production_plans'))[0].id, productionPlan.id);
+    const guide = data(await call('get_production_guide', { stage: 'prop', plan_id: productionPlan.id }));
+    assert.equal(guide.snapshot.entries.length, 3);
+    assert.ok(guide.snapshot.entries.some(entry => entry.sources.some(source => source.commit.length === 40)));
+    assert.equal((await fetch(`${base}/api/production/plans/${productionPlan.id}`, { headers: bearer(b.token) })).status, 404);
+    assert.equal((await fetch(`${base}/api/production/guides/prop?plan_id=${productionPlan.id}`, { headers: bearer(b.token) })).status, 404);
+    assert.equal((await fetch(`${base}/api/production/plans`)).status, 401);
+    assert.deepEqual((await fetch(`${base}/api/production/plans`, { headers: bearer(b.token) }).then(r => r.json())).data, []);
     const account = data(await call('get_account'));
     assert.equal(account.user.id, 1); assert.equal(account.notifications.feishu.configured, false);
     assert.equal(data(await call('list_skills')).some(s => s.id === 'private-1'), true);
@@ -113,10 +128,16 @@ test('stdio MCP：账号隔离、固定 Skill、异步飞书通知、下载与�
     assert.ok(!(await notificationRes.text()).includes('/feishu/user-1'));
     const otherAccount = await fetch(`${base}/api/mcp/me`, { headers: bearer(b.token) }).then(r => r.json());
     assert.equal(otherAccount.data.notifications.feishu.configured, false);
-    const creation = await call('create_model', { name: 'MCP 测试木椅', image_paths: [imagePath] });
+    const creation = await call('create_model', { name: 'MCP 测试木椅', image_paths: [imagePath], production_plan_id: productionPlan.id });
     assert.ok(!creation.isError, creation.content[0].text);
     const job = data(creation);
     assert.equal(job.status, 'queued');
+    assert.equal(job.production_plan_id, productionPlan.id);
+    for (const expected of guide.snapshot.entries) {
+        const applied = job.skill_snapshot.entries.find(entry => entry.id === expected.id);
+        assert.equal(applied.sha256, expected.sha256);
+        assert.equal(applied.mandatory, true);
+    }
     assert.ok(job.skill_snapshot.entries.some(entry => entry.id === 'private-1' && entry.mandatory));
     assert.equal((await fetch(`${base}/api/jobs/${job.id}`, { headers: bearer(b.token) })).status, 404);
     const done = await waitFor(async () => {

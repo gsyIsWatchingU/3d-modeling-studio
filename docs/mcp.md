@@ -32,6 +32,10 @@
 | 工具 | 功能 |
 |---|---|
 | `get_account` | 查看当前账号、固定 Skill、通知是否配置 |
+| `list_production_skills` | 查看固定制作阶段与真实能力 |
+| `list_production_plans` | 查看已有制作计划 |
+| `create_production_plan` | 保存游戏目标及全流程规范快照 |
+| `get_production_guide` | 读取阶段完整规范，提供 plan_id 可读取计划版本 |
 | `list_skills` | 列出可用 Skill |
 | `create_model` | 上传本机参考图，立即返回任务 ID |
 | `get_job` | 查询进度、结果、通知状态 |
@@ -40,6 +44,8 @@
 提交默认开启飞书通知；未配置时会拒绝提交。用户明确无需通知时可传 `notify_feishu: false`。模型生成或失败后由后台发送通知，不需要保持 AI 会话在线。飞书机器人通知发送到其所属群，不会根据登录邮箱自动发送私信。
 
 图片路径是运行 MCP 的电脑上的绝对路径，单张最多 10 MB、总计 30 MB，最多 6 张。第一张参与生成，其余作为留存参考。模型下载链接需要登录同一账号；`get_model` 下载时自动认证。
+
+建模自动应用固定生产规范。关联游戏制作计划时，向 `create_model` 传 `production_plan_id`，并选择与计划一致的 `profile`。其他阶段见 [游戏制作流](game-production.md)。
 
 ## 账号与通知
 

@@ -157,6 +157,9 @@ test('多图任务会立即返回 202，并由后台 Worker 完成模型校验',
     assert.equal(response.status, 202, childOutput);
     const created = await response.json();
     assert.equal(created.data.status, 'queued');
+    for (const id of ['production-common', 'production-modeling', 'production-prop']) {
+        assert.ok(created.data.skill_snapshot.entries.some(entry => entry.id === id && entry.mandatory));
+    }
 
     const completed = await waitFor(async () => {
         const result = await fetch(`http://127.0.0.1:${appPort}/api/jobs/${created.data.id}`, {headers: {Cookie: `studio_session=${sessionToken}`}}).then(item => item.json());

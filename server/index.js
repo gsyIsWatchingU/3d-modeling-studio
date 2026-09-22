@@ -10,6 +10,7 @@ const {
     jobDb,
     notificationDb,
     configDb,
+    productionPlanDb,
     getStats,
     uploadDir,
     modelDir
@@ -26,6 +27,8 @@ const { parseSeed } = require('./utils');
 const { getProviderConfig, startModelWorker } = require('./model-worker');
 const { getEffectiveConfig, getChannelStatus, sendChannel, startNotificationWorker } = require('./notifier');
 const { createAuthRouter, requireUser, requireModelUser, localUserResponse } = require('./auth');
+const { createProductionRouter } = require('./production');
+const { getCatalog, modelingSkills } = require('./production-skills');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -48,6 +51,7 @@ app.use((req, res, next) => {
 });
 // 统一账号认证：/auth/*、/me、/logout
 app.use(createAuthRouter());
+app.use('/api/production', createProductionRouter());
 app.use('/vendor/three', express.static(path.join(__dirname, '..', 'node_modules', 'three')));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use('/models', requireModelUser, (req, res, next) => {
@@ -151,6 +155,7 @@ app.get('/api/bootstrap', requireUser, (req, res) => {
             notifications: notificationPublicConfig(req.user.id),
             skills: skillDb.list(req.user.id).map(({ content, ...skill }) => ({ ...skill, content_length: content.length })),
             settings: settingsDb.get(req.user.id),
+            production: getCatalog(),
             limits: { max_images: MAX_IMAGES, max_image_bytes: MAX_IMAGE_SIZE, max_total_bytes: MAX_TOTAL_SIZE },
             profiles: [
                 { id: 'xhs_mobile', name: '移动端标准', description: '生成更快，适合网页和移动端' },
@@ -278,8 +283,15 @@ app.post('/api/jobs', requireModelUser, limitJobSubmissions, imageUpload.array('
     try {
         if (!getProviderConfig().apiUrl) throw new Error('建模服务尚未配置，请先打开设置完成配置');
         imageNames = normalizeUploadedImages(req.files || []);
+        const productionPlan = req.body.production_plan_id ? productionPlanDb.findById(req.body.production_plan_id, req.user.id) : null;
+        if (req.body.production_plan_id && !productionPlan) throw new Error('制作计划不存在或不属于当前账号');
+        const assetKind = ASSET_KINDS.includes(req.body.asset_kind) ? req.body.asset_kind : 'prop';
+        const profile = PROFILES.includes(req.body.profile) ? req.body.profile : 'xhs_mobile';
+        if (productionPlan && productionPlan.profile !== profile) throw new Error('质量档位与制作计划不一致，请选择计划对应档位');
         const settings = settingsDb.get(req.user.id);
         const defaultSkills = (settings.default_skill_ids || [settings.default_skill_id]).map(id => skillDb.findById(id, req.user.id)).filter(Boolean);
+        defaultSkills.unshift(...modelingSkills(assetKind, productionPlan));
+        if (productionPlan) defaultSkills.push({ id: `${productionPlan.id}-brief`, name: '本计划目标与约束', version: 1, content: productionPlan.brief });
         const extraIds = safeStringList(req.body.skill_ids).slice(0, 3);
         const extraSkills = extraIds.map(id => skillDb.findById(id, req.user.id)).filter(Boolean);
         const inlineSkill = String(req.body.inline_skill || '').trim();
@@ -289,8 +301,6 @@ app.post('/api/jobs', requireModelUser, limitJobSubmissions, imageUpload.array('
         if (extraSkills.length !== extraIds.length) throw new Error('所选 Skill 不存在或不属于当前用户');
         const snapshot = createSkillSnapshot(defaultSkills, extraSkills, inlineSkill);
         if (buildProviderPrompt(snapshot, prompt).length > 12000) throw new Error('提示词与 Skill 合并后超过 12000 字，请精简内容');
-        const assetKind = ASSET_KINDS.includes(req.body.asset_kind) ? req.body.asset_kind : 'prop';
-        const profile = PROFILES.includes(req.body.profile) ? req.body.profile : 'xhs_mobile';
         const availableChannels = getChannelStatus(req.user.id);
         const channels = req.isMcp && req.body.channels === undefined ? ['feishu'] : safeStringList(req.body.channels, CHANNELS);
         if (req.isMcp && channels.some(channel => !availableChannels[channel]?.configured)) throw new Error('请先登录网页，在设置中保存当前账号的通知配置');
@@ -299,6 +309,7 @@ app.post('/api/jobs', requireModelUser, limitJobSubmissions, imageUpload.array('
         if (name.length < 2) name = `${name || '新'}模型`;
         const job = jobDb.create({
             owner_id: req.user.id,
+            production_plan_id: productionPlan?.id,
             name,
             input: { images: imageNames, prompt, asset_kind: assetKind, profile, seed: parseSeed(req.body.seed) },
             skill_snapshot: snapshot,

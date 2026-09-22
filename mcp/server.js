@@ -11,14 +11,16 @@ function createServer({ baseUrl, token }) {
     if (base.username || base.password || base.search || base.hash || base.pathname !== '/') throw new Error('STUDIO_URL 必须是平台首页地址');
     if (base.protocol !== 'https:' && !(base.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(base.hostname))) throw new Error('远程平台必须使用 HTTPS');
     if (!/^studio_[A-Za-z0-9_-]{43}$/.test(token || '')) throw new Error('请配置网页登录后创建的 STUDIO_TOKEN');
-    const server = new McpServer({ name: '3d-modeling-studio', version: '1.0.0' });
+    const server = new McpServer({ name: '3d-modeling-studio', version: '1.1.0' }, {
+        instructions: '处理游戏制作任务时先查找已有制作计划，再用 get_production_guide 读取相应阶段的固定规范和计划约束。需要新计划时使用 create_production_plan。当前 AI 可按规范编写剧本和生产规格；模型通过 create_model 提交，固定建模规范由后端自动加入。音频、绑定动画和引擎集成未通过本站执行，不能把规范或提示词说成已生成的资产。仅执行当前用户请求范围内的工作。'
+    });
 
     async function request(route, options = {}) {
         const url = new URL(route, base);
         if (url.origin !== base.origin) throw new Error('不允许访问平台以外的地址');
         let response;
         try {
-            response = await fetch(url, { ...options, headers: { Authorization: `Bearer ${token}` }, redirect: 'error', signal: AbortSignal.timeout(60000) });
+            response = await fetch(url, { ...options, headers: { ...options.headers, Authorization: `Bearer ${token}` }, redirect: 'error', signal: AbortSignal.timeout(60000) });
         } catch { throw new Error('无法连接建模平台，请检查 STUDIO_URL 和网络；提交超时后先到网页确认任务，避免重复提交'); }
         if (response.status === 401) throw new Error('登录凭证已过期或撤销，请登录网页重新创建 MCP 凭证');
         return response;
@@ -42,7 +44,20 @@ function createServer({ baseUrl, token }) {
     }
     tool('get_account', '查看当前凭证所属账号、固定 Skill 与飞书通知是否已配置。不会返回密码或 Webhook。', {}, () => api('/api/mcp/me'));
     tool('list_skills', '列出当前账号可使用的建模 Skill。固定 Skill 由后端自动加入。', {}, () => api('/api/skills'));
-    tool('create_model', '使用本机参考图片提交 GPU 建模任务，立即返回任务 ID。默认完成或失败后通知当前账号的飞书；未配置飞书时拒绝提交。第一张参与生成，其余仅留作参考。不要自动重复提交。', {
+    const stageSchema = z.enum(['design', 'narrative', 'character', 'environment', 'prop', 'animation', 'audio', 'integration', 'qa']);
+    tool('list_production_skills', '查看游戏全流程固定 Skill、阶段依赖与实际执行能力。剧本由当前 AI 按规范编写；音频/动画生成尚未接入，不能宣称已生成。', {}, () => api('/api/production/catalog'));
+    tool('list_production_plans', '列出当前账号已保存的游戏制作计划，继续工作前先查找已有计划，避免重复创建。', {}, () => api('/api/production/plans'));
+    tool('get_production_guide', '开始某个制作阶段前读取固定规范全文、交付要求与来源。提供 plan_id 时返回该计划冻结的版本及项目约束；按规范完成当前用户授权的创作，不额外授权发布或调用外部服务。', {
+        stage: stageSchema, plan_id: z.string().regex(/^P[0-9a-f-]{36}$/).optional()
+    }, ({ stage, plan_id }) => api(`/api/production/guides/${stage}${plan_id ? `?plan_id=${encodeURIComponent(plan_id)}` : ''}`));
+    tool('create_production_plan', '保存游戏制作计划，冻结全部阶段的 Skill 与来源版本。仅创建规范和交接清单，不会生成剧本、声音或模型。随后用 get_production_guide 按阶段开展创作。', {
+        name: z.string().min(1).max(80), brief: z.string().min(1).max(2000), profile: z.enum(['xhs_mobile', 'steam_desktop']).default('xhs_mobile')
+    }, async args => {
+        const { stages, ...plan } = await api('/api/production/plans', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(args) });
+        return { ...plan, stages: stages.map(({ snapshot, ...stage }) => stage) };
+    }, false);
+    tool('create_model', '使用本机参考图片提交 GPU 建模任务，立即返回任务 ID。自动固定制作通则、建模与对应资产类型 Skill；可关联 production_plan_id。默认通知当前账号飞书；未配置时拒绝提交。第一张参与生成，其余留作参考。不要重复提交。', {
+        production_plan_id: z.string().regex(/^P[0-9a-f-]{36}$/).optional(),
         image_paths: z.array(z.string().min(1)).min(1).max(6).describe('本机 JPG、PNG、WebP 文件绝对路径'),
         name: z.string().max(80).optional(), prompt: z.string().max(1000).default(''),
         skill_ids: z.array(z.string()).max(3).default([]), inline_skill: z.string().max(1000).default(''),
@@ -71,7 +86,7 @@ function createServer({ baseUrl, token }) {
                 form.append('images', new Blob([bytes], { type: type.mime }), path.basename(filename));
             } finally { await file.close(); }
         }
-        for (const field of ['name', 'prompt', 'inline_skill', 'asset_kind', 'profile', 'seed']) {
+        for (const field of ['name', 'prompt', 'inline_skill', 'asset_kind', 'profile', 'seed', 'production_plan_id']) {
             if (args[field] !== undefined) form.append(field, String(args[field]));
         }
         form.append('skill_ids', JSON.stringify(args.skill_ids));

@@ -35,6 +35,7 @@ function initialData() {
         users: [],
         sessions: [],
         api_tokens: [],
+        production_plans: [],
         user_notifications: {},
         settings: { default_skill_ids: [BUILTIN_SKILL.id], default_skill_id: BUILTIN_SKILL.id },
         user_settings: {},
@@ -62,6 +63,7 @@ function normalizeDb(raw) {
     db.users = Array.isArray(db.users) ? db.users : [];
     db.sessions = Array.isArray(db.sessions) ? db.sessions : [];
     db.api_tokens = Array.isArray(db.api_tokens) ? db.api_tokens : [];
+    db.production_plans = Array.isArray(db.production_plans) ? db.production_plans : [];
     db.user_notifications = db.user_notifications && typeof db.user_notifications === 'object' ? db.user_notifications : {};
     db.user_settings = db.user_settings && typeof db.user_settings === 'object' ? db.user_settings : {};
     if (!db.skills.some(skill => skill.id === BUILTIN_SKILL.id)) db.skills.unshift(BUILTIN_SKILL);
@@ -354,6 +356,7 @@ const jobDb = {
                 input: data.input,
                 skill_snapshot: data.skill_snapshot,
                 owner_id: data.owner_id ?? null,
+                production_plan_id: data.production_plan_id || null,
                 requested_channels: data.requested_channels || [],
                 base_url: data.base_url || '',
                 attempt: 0,
@@ -417,6 +420,23 @@ const jobDb = {
             }
             return count;
         });
+    }
+};
+
+const productionPlanDb = {
+    create(data, userId) {
+        return mutate(db => {
+            if (db.production_plans.filter(plan => plan.owner_id === userId).length >= 100) throw new Error('最多保存 100 份制作计划');
+            const plan = { ...clone(data), id: `P${crypto.randomUUID()}`, owner_id: userId, created_at: new Date().toISOString() };
+            db.production_plans.push(plan);
+            return clone(plan);
+        });
+    },
+    findById(id, userId) {
+        return clone(readDb().production_plans.find(plan => plan.id === id && plan.owner_id === userId) || null);
+    },
+    list(userId) {
+        return readDb().production_plans.filter(plan => plan.owner_id === userId).reverse().map(({ stages, brief, ...plan }) => plan);
     }
 };
 
@@ -531,6 +551,7 @@ module.exports = {
     userDb,
     sessionDb,
     apiTokenDb,
+    productionPlanDb,
     getStats,
     dbPath,
     uploadDir,
