@@ -83,7 +83,13 @@ jobs:
           supervisorctl -c /workspace/etc/supervisord.conf reread
           supervisorctl -c /workspace/etc/supervisord.conf update
           supervisorctl -c /workspace/etc/supervisord.conf \
-            restart 3d-modeling-studio cloudflared-3d-modeling-studio
+            restart 3d-modeling-studio
+          # 保留 Quick Tunnel 域名，避免破坏 SSO 回跳地址。
+          if ! supervisorctl -c /workspace/etc/supervisord.conf \
+            status cloudflared-3d-modeling-studio | grep -q RUNNING; then
+            supervisorctl -c /workspace/etc/supervisord.conf \
+              start cloudflared-3d-modeling-studio
+          fi
 
       - name: Verify public site
         run: |

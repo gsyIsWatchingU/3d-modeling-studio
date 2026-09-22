@@ -2,6 +2,18 @@
 
 按照公司GPU服务器标准部署流程：
 
+## 统一账号 SSO 接入说明
+
+本站使用 Algorithm Lab 统一账号中心（`SSO_AUTH_BASE_URL=https://gsy-gpu.tail660bdf.ts.net`，client_id `3d-modeling-studio`）：
+
+- 后端认证在 `server/auth.js`：JSON 代理（`/auth/register-code|register|login`）+ SSO 跳转（`/auth/sso/start|callback`，OAuth2 授权码 + PKCE）+ 本地会话（`/me`、`/logout`）。密码只存在账号中心，本地 `db.json` 的 `users.password` 是 `sso:` 占位符。
+- 前端：`public/login.html` 登录/注册页 + `public/auth.js` + `main.js` 启动守卫。Skill、个人设置、任务和模型下载要求登录，并校验所属用户；健康检查公开。
+- `SSO_CLIENTS_JSON` 在账号中心 `/workspace/algorithm-lab/.env` 注册，`redirectUri` 必须与本站 `PUBLIC_URL`（`deploy/supervisor.conf` 的 environment）**完全一致**。
+
+> **注意：Quick Tunnel 地址每次隧道重启都会变**。隧道地址变了之后，必须同时更新两处再重启，否则 SSO 跳转失效：
+> 1. 账号中心 `.env` 的 `SSO_CLIENTS_JSON` → `3d-modeling-studio.redirectUris`（改完 `supervisorctl -c /workspace/etc/supervisord.conf restart web`）
+> 2. 本仓库 `deploy/supervisor.conf` 的 `PUBLIC_URL`（改完 `supervisorctl reread && update && restart 3d-modeling-studio`，**不要重启 cloudflared**）
+
 ## 部署步骤
 
 ### 1. 上传代码到服务器

@@ -45,8 +45,11 @@ node --check server/utils.js
 node --check server/image-board.js
 node --check server/model-worker.js
 node --check server/notifier.js
+node --check server/auth.js
+node --check server/skill-plan.js
 node --check public/main.js
+node --check public/auth.js
 
 echo "依赖与目录就绪，端口 $PORT。"
 echo "重启请用（必须带 -c，服务器 socket 不在默认路径）："
-echo "  supervisorctl -c /workspace/etc/supervisord.conf restart 3d-modeling-studio cloudflared-3d-modeling-studio"
+echo "  supervisorctl -c /workspace/etc/supervisord.conf restart 3d-modeling-studio"
