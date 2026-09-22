@@ -32,7 +32,7 @@
 
                 <section class="step-card" aria-labelledby="step1Title">
                     <h2 id="step1Title"><span class="step-no">01</span>上传参考图</h2>
-                    <p class="step-copy">支持 1～6 张。多图会合成为多视角参考板。</p>
+                    <p class="step-copy">建议先用 1 张主体完整、背景干净的图片。支持最多 6 张；多图会拼板，可能生成重复主体。</p>
                     <div class="upload-area" id="uploadArea" tabindex="0" role="button" aria-label="选择参考图片">
                         <input type="file" id="fileInput" accept="image/jpeg,image/png,image/webp" multiple hidden>
                         <span class="upload-icon" aria-hidden="true">+</span>
@@ -47,6 +47,7 @@
                     <div class="form-group">
                         <label for="promptInput">建模要求 <span id="promptCount">0/1000</span></label>
                         <textarea id="promptInput" maxlength="1000" placeholder="例如：保留黄铜材质，补全背面结构，底座不要变形。"></textarea>
+                        <p class="step-copy">当前主要依据图片生成。要求与 Skill 会保留用于验收，暂不支持通过文字精确修改形体；细链条、齿轮建议拆分建模。</p>
                     </div>
                 </section>
 
