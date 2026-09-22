@@ -60,7 +60,7 @@ async function submitJob(job, config) {
 
     if (result.model_url) {
         jobDb.update(job.id, { status: 'downloading', progress_message: '正在保存模型文件' });
-        await finishWithRemoteModel(job, result.model_url);
+        await finishWithRemoteModel(job, result.model_url, result);
         return;
     }
 
@@ -82,6 +82,12 @@ function findOutput(result) {
 function progressFromResult(result) {
     const runningStage = [...(result.stages || [])].reverse().find(stage => stage.state === 'running');
     const names = {
+        prepare: '正在准备参考图',
+        generate_mesh: '正在生成模型形体',
+        generate_material: '正在生成 PBR 材质',
+        normalize_mesh: '正在整理模型结构',
+        render_preview: '正在生成预览',
+        validate: '正在进行质量检查',
         shape: '正在生成模型形体',
         texture: '正在生成 PBR 材质',
         normalize: '正在整理模型结构',
@@ -91,7 +97,18 @@ function progressFromResult(result) {
         preview: '正在生成预览',
         quality: '正在进行质量检查'
     };
+    if (String(result.state || result.status).toLowerCase() === 'queued') return 'GPU 排队中，等待空闲资源';
     return names[runningStage?.name] || 'GPU 正在生成模型';
+}
+
+function providerQuality(result = {}) {
+    const state = String(result.state || result.status || '').toLowerCase();
+    return {
+        review_required: state !== 'approved',
+        provider_state: state || 'unknown',
+        quality_gates: result.quality_gates || {},
+        metrics: result.metrics || {}
+    };
 }
 
 async function pollProviderJob(job, config) {
@@ -105,7 +122,7 @@ async function pollProviderJob(job, config) {
     const output = findOutput(result);
     if (FORGE_READY_STATES.has(state) && output) {
         jobDb.update(job.id, { status: 'downloading', progress_message: '正在保存模型文件' });
-        await finishWithRemoteModel(job, output);
+        await finishWithRemoteModel(job, output, result);
         return;
     }
     jobDb.update(job.id, {
@@ -136,10 +153,11 @@ async function readModelSource(source) {
     return buffer;
 }
 
-async function finishWithRemoteModel(job, source) {
+async function finishWithRemoteModel(job, source, result = {}) {
     const buffer = await readModelSource(source);
     jobDb.update(job.id, { status: 'validating', progress_message: '正在校验 GLB 文件' });
     const validation = validateGlbBuffer(buffer);
+    const quality = providerQuality(result);
     const fileName = `model-${job.id}-${Date.now()}.glb`;
     fs.writeFileSync(path.join(modelDir, fileName), buffer);
     const model = modelDb.create({
@@ -153,10 +171,11 @@ async function finishWithRemoteModel(job, source) {
         file_size: validation.length,
         sha256: validation.sha256
     });
+    modelDb.update(model.id, { quality });
     const completed = jobDb.update(job.id, {
         status: 'succeeded',
-        progress_message: '模型已生成并通过校验',
-        output: { model_id: model.id, model_file: model.model_file, file_size: validation.length, sha256: validation.sha256, validated: true },
+        progress_message: quality.review_required ? '模型已生成，文件校验通过；建模效果待验收' : '模型已生成，文件校验与效果验收通过',
+        output: { model_id: model.id, model_file: model.model_file, file_size: validation.length, sha256: validation.sha256, validated: true, quality },
         completed_at: new Date().toISOString(),
         error: null
     });
@@ -218,4 +237,4 @@ function startModelWorker() {
     return { wake: tick, stop: () => clearInterval(timer) };
 }
 
-module.exports = { getProviderConfig, findOutput, progressFromResult, startModelWorker, PermanentJobError };
+module.exports = { getProviderConfig, findOutput, progressFromResult, providerQuality, startModelWorker, PermanentJobError };
