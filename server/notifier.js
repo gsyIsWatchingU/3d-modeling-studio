@@ -1,24 +1,26 @@
 const nodemailer = require('nodemailer');
 const { configDb, jobDb, notificationDb } = require('./db');
 
-function getEffectiveConfig() {
-    const stored = configDb.getNotifications();
+function getEffectiveConfig(userId) {
+    const stored = configDb.getNotifications(userId);
+    // 旧的全局配置只供无归属的历史任务使用，不能作为其他账号的默认收件人。
+    const env = userId === undefined || userId === null ? process.env : {};
     return {
         email: {
-            recipient: process.env.NOTIFY_EMAIL_TO || stored.email.recipient || '',
-            smtp_host: process.env.SMTP_HOST || stored.email.smtp_host || '',
-            smtp_port: Number(process.env.SMTP_PORT || stored.email.smtp_port || 465),
-            smtp_secure: process.env.SMTP_SECURE ? process.env.SMTP_SECURE === 'true' : stored.email.smtp_secure !== false,
-            smtp_user: process.env.SMTP_USER || stored.email.smtp_user || '',
-            smtp_pass: process.env.SMTP_PASS || stored.email.smtp_pass || ''
+            recipient: env.NOTIFY_EMAIL_TO || stored.email.recipient || '',
+            smtp_host: env.SMTP_HOST || stored.email.smtp_host || '',
+            smtp_port: Number(env.SMTP_PORT || stored.email.smtp_port || 465),
+            smtp_secure: env.SMTP_SECURE ? env.SMTP_SECURE === 'true' : stored.email.smtp_secure !== false,
+            smtp_user: env.SMTP_USER || stored.email.smtp_user || '',
+            smtp_pass: env.SMTP_PASS || stored.email.smtp_pass || ''
         },
-        feishu: { webhook: process.env.FEISHU_WEBHOOK || stored.feishu.webhook || '' },
-        wecom: { webhook: process.env.WECOM_WEBHOOK || stored.wecom.webhook || '' }
+        feishu: { webhook: env.FEISHU_WEBHOOK || stored.feishu.webhook || '' },
+        wecom: { webhook: env.WECOM_WEBHOOK || stored.wecom.webhook || '' }
     };
 }
 
-function getChannelStatus() {
-    const config = getEffectiveConfig();
+function getChannelStatus(userId) {
+    const config = getEffectiveConfig(userId);
     return {
         email: {
             label: '邮箱',
@@ -69,10 +71,10 @@ async function postWebhook(url, body) {
 }
 
 async function sendChannel(channel, job) {
-    const config = getEffectiveConfig();
+    const config = getEffectiveConfig(job.owner_id);
     const text = buildMessage(job);
     if (channel === 'email') {
-        if (!getChannelStatus().email.configured) throw new Error('邮箱通知尚未完整配置');
+        if (!getChannelStatus(job.owner_id).email.configured) throw new Error('邮箱通知尚未完整配置');
         const transport = nodemailer.createTransport({
             host: config.email.smtp_host,
             port: config.email.smtp_port,

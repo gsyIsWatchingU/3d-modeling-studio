@@ -9,7 +9,7 @@ process.env.DB_PATH = path.join(tempRoot, 'db.json');
 process.env.UPLOAD_DIR = path.join(tempRoot, 'uploads');
 process.env.MODEL_DIR = path.join(tempRoot, 'models');
 
-const { userDb, sessionDb } = require('../server/db');
+const { userDb, sessionDb, apiTokenDb } = require('../server/db');
 
 test('统一账号 upsert：首次插入，重复登录按 ssoSubject 关联同一行', () => {
     const first = userDb.upsertSsoUser({ id: 'sso-user-1', email: 'Tester@Example.com', name: '测试用户' });
@@ -37,4 +37,18 @@ test('本地会话：创建 → 校验 → 过期/删除后失效', () => {
     assert.equal(sessionDb.findByToken('not-a-token'), null);
     sessionDb.deleteByToken(token);
     assert.equal(sessionDb.findByToken(token), null);
+});
+
+test('MCP 凭证保存摘要，过期和撤销后立即失效', () => {
+    const user = userDb.upsertSsoUser({ id: 'mcp-token-user', email: 'mcp@example.com' });
+    const issued = apiTokenDb.create(user.id, '测试客户端');
+    assert.equal(apiTokenDb.authenticate(issued.token).id, user.id);
+    assert.ok(!fs.readFileSync(process.env.DB_PATH, 'utf8').includes(issued.token));
+    assert.equal(apiTokenDb.revoke(issued.id, user.id + 1), false);
+    const db = JSON.parse(fs.readFileSync(process.env.DB_PATH, 'utf8'));
+    db.api_tokens.find(item => item.id === issued.id).expires_at = '2000-01-01T00:00:00.000Z';
+    fs.writeFileSync(process.env.DB_PATH, JSON.stringify(db));
+    assert.equal(apiTokenDb.authenticate(issued.token), null);
+    assert.equal(apiTokenDb.revoke(issued.id, user.id), true);
+    assert.equal(apiTokenDb.list(user.id).length, 0);
 });

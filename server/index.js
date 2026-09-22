@@ -24,8 +24,8 @@ const {
 } = require('./utils');
 const { parseSeed } = require('./utils');
 const { getProviderConfig, startModelWorker } = require('./model-worker');
-const { getChannelStatus, sendChannel, startNotificationWorker } = require('./notifier');
-const { createAuthRouter, requireUser } = require('./auth');
+const { getEffectiveConfig, getChannelStatus, sendChannel, startNotificationWorker } = require('./notifier');
+const { createAuthRouter, requireUser, requireModelUser, localUserResponse } = require('./auth');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -50,7 +50,7 @@ app.use((req, res, next) => {
 app.use(createAuthRouter());
 app.use('/vendor/three', express.static(path.join(__dirname, '..', 'node_modules', 'three')));
 app.use(express.static(path.join(__dirname, '..', 'public')));
-app.use('/models', requireUser, (req, res, next) => {
+app.use('/models', requireModelUser, (req, res, next) => {
     const model = modelDb.list().find(item => item.model_file === '/models' + req.path);
     if (!model || jobDb.findById(model.job_id)?.owner_id !== req.user.id) return res.status(404).end();
     next();
@@ -107,21 +107,21 @@ function providerPublicConfig() {
     };
 }
 
-function notificationPublicConfig() {
-    const stored = configDb.getNotifications();
+function notificationPublicConfig(userId) {
+    const stored = getEffectiveConfig(userId);
     return {
-        status: getChannelStatus(),
+        status: getChannelStatus(userId),
         editable: {
             email: {
-                recipient_configured: Boolean(process.env.NOTIFY_EMAIL_TO || stored.email.recipient),
-                smtp_host_configured: Boolean(process.env.SMTP_HOST || stored.email.smtp_host),
+                recipient_configured: Boolean(stored.email.recipient),
+                smtp_host_configured: Boolean(stored.email.smtp_host),
                 smtp_port: stored.email.smtp_port || 465,
                 smtp_secure: stored.email.smtp_secure !== false,
-                smtp_user_configured: Boolean(process.env.SMTP_USER || stored.email.smtp_user),
-                smtp_pass_configured: Boolean(process.env.SMTP_PASS || stored.email.smtp_pass)
+                smtp_user_configured: Boolean(stored.email.smtp_user),
+                smtp_pass_configured: Boolean(stored.email.smtp_pass)
             },
-            feishu: { webhook_configured: Boolean(process.env.FEISHU_WEBHOOK || stored.feishu.webhook) },
-            wecom: { webhook_configured: Boolean(process.env.WECOM_WEBHOOK || stored.wecom.webhook) }
+            feishu: { webhook_configured: Boolean(stored.feishu.webhook) },
+            wecom: { webhook_configured: Boolean(stored.wecom.webhook) }
         }
     };
 }
@@ -131,7 +131,7 @@ function jobWithNotifications(job) {
 }
 
 function limitJobSubmissions(req, res, next) {
-    const key = String(req.get('cf-connecting-ip') || req.ip || 'unknown');
+    const key = String(req.user.id);
     const now = Date.now();
     const recent = (jobSubmissionBuckets.get(key) || []).filter(timestamp => now - timestamp < 6 * 60 * 60 * 1000);
     if (recent.length >= 12) return res.status(429).json({ success: false, error: '6 小时内最多提交 12 个任务，请稍后再试' });
@@ -148,7 +148,7 @@ app.get('/api/bootstrap', requireUser, (req, res) => {
         success: true,
         data: {
             provider: providerPublicConfig(),
-            notifications: notificationPublicConfig(),
+            notifications: notificationPublicConfig(req.user.id),
             skills: skillDb.list(req.user.id).map(({ content, ...skill }) => ({ ...skill, content_length: content.length })),
             settings: settingsDb.get(req.user.id),
             limits: { max_images: MAX_IMAGES, max_image_bytes: MAX_IMAGE_SIZE, max_total_bytes: MAX_TOTAL_SIZE },
@@ -165,7 +165,14 @@ app.get('/api/bootstrap', requireUser, (req, res) => {
     });
 });
 
-app.get('/api/skills', requireUser, (req, res) => {
+app.get('/api/mcp/me', requireModelUser, (req, res) => {
+    res.set('Cache-Control', 'no-store').json({ success: true, data: {
+        user: localUserResponse(req.user), notifications: getChannelStatus(req.user.id),
+        settings: settingsDb.get(req.user.id)
+    } });
+});
+
+app.get('/api/skills', requireModelUser, (req, res) => {
     res.json({ success: true, data: skillDb.list(req.user.id).map(({ content, ...skill }) => ({ ...skill, content_length: content.length })) });
 });
 
@@ -223,12 +230,12 @@ app.put('/api/config/spu', requireUser, (req, res) => {
     }
 });
 
-app.get('/api/notification-config', (req, res) => {
-    res.json({ success: true, data: notificationPublicConfig() });
+app.get('/api/notification-config', requireUser, (req, res) => {
+    res.json({ success: true, data: notificationPublicConfig(req.user.id) });
 });
 
 app.put('/api/notification-config', requireUser, (req, res) => {
-    const current = configDb.getNotifications();
+    const current = configDb.getNotifications(req.user.id);
     const body = req.body || {};
     const next = {
         email: {
@@ -244,8 +251,8 @@ app.put('/api/notification-config', requireUser, (req, res) => {
     if (String(body.email?.smtp_pass || '').trim()) next.email.smtp_pass = String(body.email.smtp_pass);
     if (String(body.feishu?.webhook || '').trim()) next.feishu.webhook = String(body.feishu.webhook).trim();
     if (String(body.wecom?.webhook || '').trim()) next.wecom.webhook = String(body.wecom.webhook).trim();
-    configDb.saveNotifications(next);
-    res.json({ success: true, data: notificationPublicConfig() });
+    configDb.saveNotifications(next, req.user.id);
+    res.json({ success: true, data: notificationPublicConfig(req.user.id) });
 });
 
 app.post('/api/notification-config/test', requireUser, async (req, res) => {
@@ -254,6 +261,7 @@ app.post('/api/notification-config/test', requireUser, async (req, res) => {
     try {
         await sendChannel(channel, {
             id: 'TEST',
+            owner_id: req.user.id,
             name: '通知连通性测试',
             status: 'succeeded',
             base_url: process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`,
@@ -265,7 +273,7 @@ app.post('/api/notification-config/test', requireUser, async (req, res) => {
     }
 });
 
-app.post('/api/jobs', requireUser, limitJobSubmissions, imageUpload.array('images', MAX_IMAGES), (req, res) => {
+app.post('/api/jobs', requireModelUser, limitJobSubmissions, imageUpload.array('images', MAX_IMAGES), (req, res) => {
     let imageNames = [];
     try {
         if (!getProviderConfig().apiUrl) throw new Error('建模服务尚未配置，请先打开设置完成配置');
@@ -283,8 +291,10 @@ app.post('/api/jobs', requireUser, limitJobSubmissions, imageUpload.array('image
         if (buildProviderPrompt(snapshot, prompt).length > 12000) throw new Error('提示词与 Skill 合并后超过 12000 字，请精简内容');
         const assetKind = ASSET_KINDS.includes(req.body.asset_kind) ? req.body.asset_kind : 'prop';
         const profile = PROFILES.includes(req.body.profile) ? req.body.profile : 'xhs_mobile';
-        const availableChannels = getChannelStatus();
-        const requestedChannels = safeStringList(req.body.channels, CHANNELS).filter(channel => availableChannels[channel]?.configured);
+        const availableChannels = getChannelStatus(req.user.id);
+        const channels = req.isMcp && req.body.channels === undefined ? ['feishu'] : safeStringList(req.body.channels, CHANNELS);
+        if (req.isMcp && channels.some(channel => !availableChannels[channel]?.configured)) throw new Error('请先登录网页，在设置中保存当前账号的通知配置');
+        const requestedChannels = channels.filter(channel => availableChannels[channel]?.configured);
         let name = String(req.body.name || path.parse(req.files[0].originalname).name || '新模型').trim().slice(0, 80);
         if (name.length < 2) name = `${name || '新'}模型`;
         const job = jobDb.create({
@@ -293,7 +303,7 @@ app.post('/api/jobs', requireUser, limitJobSubmissions, imageUpload.array('image
             input: { images: imageNames, prompt, asset_kind: assetKind, profile, seed: parseSeed(req.body.seed) },
             skill_snapshot: snapshot,
             requested_channels: requestedChannels,
-            base_url: process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`
+            base_url: process.env.PUBLIC_URL || process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`
         });
         modelWorker.wake();
         res.status(202).json({ success: true, data: jobWithNotifications(job) });
@@ -304,11 +314,11 @@ app.post('/api/jobs', requireUser, limitJobSubmissions, imageUpload.array('image
     }
 });
 
-app.get('/api/jobs', requireUser, (req, res) => {
+app.get('/api/jobs', requireModelUser, (req, res) => {
     res.json({ success: true, data: jobDb.list(req.query.limit, req.user.id).map(jobWithNotifications) });
 });
 
-app.get('/api/jobs/:id', requireUser, (req, res) => {
+app.get('/api/jobs/:id', requireModelUser, (req, res) => {
     const job = jobDb.findById(req.params.id);
     if (!job || job.owner_id !== req.user.id) return res.status(404).json({ success: false, error: '任务不存在' });
     res.json({ success: true, data: jobWithNotifications(job) });
@@ -330,11 +340,11 @@ app.post('/api/jobs/:id/retry', requireUser, (req, res) => {
     res.json({ success: true, data: jobWithNotifications(next) });
 });
 
-app.get('/api/models', requireUser, (req, res) => {
+app.get('/api/models', requireModelUser, (req, res) => {
     res.json({ success: true, data: modelDb.list().filter(model => jobDb.findById(model.job_id)?.owner_id === req.user.id) });
 });
 
-app.get('/api/models/:id', requireUser, (req, res) => {
+app.get('/api/models/:id', requireModelUser, (req, res) => {
     const model = modelDb.findById(req.params.id);
     if (!model || jobDb.findById(model.job_id)?.owner_id !== req.user.id) return res.status(404).json({ success: false, error: '模型不存在' });
     res.json({ success: true, data: model });

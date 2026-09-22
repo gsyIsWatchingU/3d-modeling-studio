@@ -194,7 +194,7 @@
 
             <section class="settings-section">
                 <h3><span>[03]</span> 结果通知</h3>
-                <p>密钥只写入服务器，不会通过配置接口返回浏览器。</p>
+                <p>通知设置仅属于当前账号，网页和 MCP 提交的任务共用。飞书机器人会向对应群发送消息；密钥保存后不再显示。</p>
                 <details open>
                     <summary>邮箱</summary>
                     <div class="two-columns">
@@ -220,6 +220,23 @@
                     <button class="text-button" type="button" data-test-channel="feishu">测试飞书</button>
                     <button class="text-button" type="button" data-test-channel="wecom">测试企业微信</button>
                 </div>
+            </section>
+            <section class="settings-section mcp-settings">
+                <h3><span>[04]</span> AI 客户端接入（MCP）</h3>
+                <p>创建与当前账号绑定的凭证，让 AI 直接提交建模。有效期 90 天，可随时撤销；完成后通知此账号配置的飞书群。</p>
+                <div class="form-group">
+                    <label for="mcpTokenName">客户端名称</label>
+                    <input type="text" id="mcpTokenName" maxlength="60" placeholder="例如：我的 AI 助手">
+                </div>
+                <button class="btn" id="createMcpTokenBtn" type="button">创建接入凭证</button>
+                <div class="form-group" id="mcpTokenResult" hidden>
+                    <label for="mcpTokenValue">新凭证 <span>仅本次显示，请保存到客户端环境变量 STUDIO_TOKEN</span></label>
+                    <input id="mcpTokenValue" type="password" readonly autocomplete="off">
+                    <button class="text-button" id="copyMcpTokenBtn" type="button">复制凭证</button>
+                </div>
+                <p>平台地址（STUDIO_URL）：<span id="mcpPlatformUrl"></span></p>
+                <p>本机运行仓库内的 mcp/server.js，使用 stdio 连接。配置步骤见仓库 docs/mcp.md。</p>
+                <div id="mcpTokenList" aria-live="polite"></div>
             </section>
         </div>
     </dialog>

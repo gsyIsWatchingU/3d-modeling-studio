@@ -3,7 +3,7 @@
 // 账号密码只存在账号中心，本模块只做 JSON 代理 + 本地 upsert + 本地会话。
 const express = require('express');
 const { createHash, randomBytes, timingSafeEqual } = require('crypto');
-const { userDb, sessionDb } = require('./db');
+const { userDb, sessionDb, apiTokenDb } = require('./db');
 
 const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 天
 const SSO_CLIENT_ID = process.env.SSO_CLIENT_ID || '3d-modeling-studio';
@@ -88,9 +88,41 @@ async function requireUser(req, res, next) {
     next();
 }
 
+// 仅建模和只读资源接口接受 MCP 凭证；账号和配置管理仍要求网页登录。
+async function requireModelUser(req, res, next) {
+    const authorization = req.get('authorization');
+    if (!authorization) return requireUser(req, res, next);
+    const match = /^Bearer (\S+)$/i.exec(authorization);
+    const user = match && apiTokenDb.authenticate(match[1]);
+    if (!user) return res.status(401).json({ success: false, error: 'MCP 凭证无效或已过期，请登录网页重新创建' });
+    req.user = user;
+    req.isMcp = true;
+    next();
+}
+
 // ---------- 路由 ----------
 function createAuthRouter() {
     const router = express.Router();
+
+    router.use('/api/mcp/tokens', (req, res, next) => {
+        res.set('Cache-Control', 'no-store');
+        const origin = req.get('origin');
+        const expected = process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
+        if (origin && origin !== new URL(expected).origin) return res.status(403).json({ success: false, error: '来源不受信任' });
+        next();
+    });
+    router.get('/api/mcp/tokens', requireUser, (req, res) => {
+        res.json({ success: true, data: apiTokenDb.list(req.user.id) });
+    });
+    router.post('/api/mcp/tokens', requireUser, (req, res) => {
+        try {
+            res.status(201).json({ success: true, data: apiTokenDb.create(req.user.id, req.body?.name) });
+        } catch (error) { res.status(400).json({ success: false, error: error.message }); }
+    });
+    router.delete('/api/mcp/tokens/:id', requireUser, (req, res) => {
+        const removed = apiTokenDb.revoke(req.params.id, req.user.id);
+        res.status(removed ? 200 : 404).json({ success: removed });
+    });
 
     // 站内注册验证码
     router.post('/auth/register-code', async (req, res) => {
@@ -208,4 +240,4 @@ function createAuthRouter() {
     return router;
 }
 
-module.exports = { createAuthRouter, authenticateSession, requireUser, localUserResponse };
+module.exports = { createAuthRouter, authenticateSession, requireUser, requireModelUser, localUserResponse };

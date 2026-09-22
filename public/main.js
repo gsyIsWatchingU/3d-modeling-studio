@@ -586,6 +586,57 @@ async function testNotification(channel) {
     } catch (error) { showToast(error.message, true); }
 }
 
+async function loadMcpTokens() {
+    const list = document.getElementById('mcpTokenList');
+    try {
+        const tokens = await api('/mcp/tokens');
+        list.replaceChildren();
+        if (!tokens.length) list.textContent = '尚未创建接入凭证';
+        for (const token of tokens) {
+            const row = document.createElement('p');
+            const text = document.createElement('span');
+            text.textContent = `${token.name} · ${new Date(token.expires_at).toLocaleDateString()} 到期 `;
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'text-button';
+            button.textContent = '撤销';
+            button.addEventListener('click', async () => {
+                button.disabled = true;
+                try {
+                    await api(`/mcp/tokens/${encodeURIComponent(token.id)}`, { method: 'DELETE' });
+                    clearMcpToken();
+                    await loadMcpTokens();
+                    showToast('凭证已撤销，已提交的任务会继续完成');
+                } catch (error) { button.disabled = false; showToast(error.message, true); }
+            });
+            row.append(text, button);
+            list.append(row);
+        }
+    } catch (error) { list.textContent = error.message; }
+}
+
+function clearMcpToken() {
+    document.getElementById('mcpTokenValue').value = '';
+    document.getElementById('mcpTokenResult').hidden = true;
+}
+
+async function createMcpToken() {
+    const button = document.getElementById('createMcpTokenBtn');
+    button.disabled = true;
+    clearMcpToken();
+    try {
+        const result = await api('/mcp/tokens', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: document.getElementById('mcpTokenName').value })
+        });
+        document.getElementById('mcpTokenValue').value = result.token;
+        document.getElementById('mcpTokenResult').hidden = false;
+        await loadMcpTokens();
+        showToast('凭证已创建，请复制保存');
+    } catch (error) { showToast(error.message, true); }
+    finally { button.disabled = false; }
+}
+
 function bindEvents() {
     const uploadArea = document.getElementById('uploadArea');
     const fileInput = document.getElementById('fileInput');
@@ -599,8 +650,18 @@ function bindEvents() {
     document.getElementById('generateBtn').addEventListener('click', submitJob);
     document.getElementById('refreshJobsBtn').addEventListener('click', () => loadJobs());
     document.getElementById('retryJobBtn').addEventListener('click', retryActiveJob);
-    document.getElementById('openSettingsBtn').addEventListener('click', () => document.getElementById('settingsDialog').showModal());
+    document.getElementById('openSettingsBtn').addEventListener('click', () => {
+        document.getElementById('settingsDialog').showModal();
+        document.getElementById('mcpPlatformUrl').textContent = location.origin;
+        loadMcpTokens();
+    });
     document.getElementById('closeSettingsBtn').addEventListener('click', () => document.getElementById('settingsDialog').close());
+    document.getElementById('settingsDialog').addEventListener('close', clearMcpToken);
+    document.getElementById('createMcpTokenBtn').addEventListener('click', createMcpToken);
+    document.getElementById('copyMcpTokenBtn').addEventListener('click', async () => {
+        try { await navigator.clipboard.writeText(document.getElementById('mcpTokenValue').value); showToast('凭证已复制'); }
+        catch { showToast('复制失败，请手动选中凭证复制', true); }
+    });
     document.getElementById('saveProviderBtn').addEventListener('click', saveProvider);
     document.getElementById('addSkillBtn').addEventListener('click', addSkill);
     document.getElementById('saveNotificationsBtn').addEventListener('click', saveNotifications);

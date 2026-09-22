@@ -34,6 +34,8 @@ function initialData() {
         notifications: [],
         users: [],
         sessions: [],
+        api_tokens: [],
+        user_notifications: {},
         settings: { default_skill_ids: [BUILTIN_SKILL.id], default_skill_id: BUILTIN_SKILL.id },
         user_settings: {},
         spu_config: { provider: 'forge3d', api_url: '', api_key: '' },
@@ -59,6 +61,8 @@ function normalizeDb(raw) {
     db.notifications = Array.isArray(db.notifications) ? db.notifications : [];
     db.users = Array.isArray(db.users) ? db.users : [];
     db.sessions = Array.isArray(db.sessions) ? db.sessions : [];
+    db.api_tokens = Array.isArray(db.api_tokens) ? db.api_tokens : [];
+    db.user_notifications = db.user_notifications && typeof db.user_notifications === 'object' ? db.user_notifications : {};
     db.user_settings = db.user_settings && typeof db.user_settings === 'object' ? db.user_settings : {};
     if (!db.skills.some(skill => skill.id === BUILTIN_SKILL.id)) db.skills.unshift(BUILTIN_SKILL);
     db.settings = { ...defaults.settings, ...(db.settings || {}) };
@@ -300,6 +304,43 @@ const sessionDb = {
     }
 };
 
+// MCP 凭证只保存摘要；账号归属始终由服务端决定。
+const apiTokenDb = {
+    create(userId, name) {
+        const token = `studio_${crypto.randomBytes(32).toString('base64url')}`;
+        const record = {
+            id: crypto.randomUUID(), userId, name: String(name || 'AI 客户端').trim().slice(0, 60),
+            hash: crypto.createHash('sha256').update(token).digest('hex'),
+            created_at: new Date().toISOString(),
+            expires_at: new Date(Date.now() + 90 * 86400000).toISOString()
+        };
+        mutate(db => {
+            if (!db.users.some(user => user.id === userId)) throw new Error('用户不存在');
+            if (db.api_tokens.filter(item => item.userId === userId && new Date(item.expires_at) > new Date()).length >= 20) throw new Error('最多保留 20 个有效凭证，请先撤销旧凭证');
+            db.api_tokens.push(record);
+        });
+        const { hash, ...metadata } = record;
+        return { ...metadata, token };
+    },
+    list(userId) {
+        return readDb().api_tokens.filter(item => item.userId === userId).map(({ hash, ...item }) => item);
+    },
+    authenticate(token) {
+        if (!/^studio_[A-Za-z0-9_-]{43}$/.test(token || '')) return null;
+        const hash = crypto.createHash('sha256').update(token).digest('hex');
+        const db = readDb();
+        const record = db.api_tokens.find(item => item.hash === hash && new Date(item.expires_at) > new Date());
+        return record ? clone(db.users.find(user => user.id === record.userId) || null) : null;
+    },
+    revoke(id, userId) {
+        return mutate(db => {
+            const before = db.api_tokens.length;
+            db.api_tokens = db.api_tokens.filter(item => item.id !== id || item.userId !== userId);
+            return before !== db.api_tokens.length;
+        });
+    }
+};
+
 const jobDb = {
     create(data) {
         return mutate(db => {
@@ -454,15 +495,21 @@ const configDb = {
             return clone(db.spu_config);
         });
     },
-    getNotifications() {
-        return clone(readDb().notification_config);
+    getNotifications(userId) {
+        const db = readDb();
+        if (userId === undefined || userId === null) return clone(db.notification_config);
+        const defaults = initialData().notification_config;
+        const stored = db.user_notifications[String(userId)] || {};
+        return Object.fromEntries(['email', 'feishu', 'wecom'].map(channel => [channel, { ...defaults[channel], ...stored[channel] }]));
     },
-    saveNotifications(data) {
+    saveNotifications(data, userId) {
         return mutate(db => {
+            const config = userId === undefined || userId === null ? db.notification_config
+                : (db.user_notifications[String(userId)] ||= initialData().notification_config);
             for (const channel of ['email', 'feishu', 'wecom']) {
-                if (data[channel]) db.notification_config[channel] = { ...db.notification_config[channel], ...data[channel] };
+                if (data[channel]) config[channel] = { ...config[channel], ...data[channel] };
             }
-            return clone(db.notification_config);
+            return clone(config);
         });
     }
 };
@@ -483,6 +530,7 @@ module.exports = {
     configDb,
     userDb,
     sessionDb,
+    apiTokenDb,
     getStats,
     dbPath,
     uploadDir,

@@ -371,6 +371,9 @@ input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--pixel-gr
 .auth-tip { margin: 14px 0 0; color: var(--pixel-ink-secondary); font-size: 11px; line-height: 1.6; }
 
 /* 顶栏用户信息 */
+.mcp-settings { grid-column: 1 / -1; overflow-wrap: anywhere; }
+.mcp-settings .form-group { margin-top: 12px; }
+
 .user-chip {
     display: inline-flex;
     align-items: center;
