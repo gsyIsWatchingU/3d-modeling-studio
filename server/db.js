@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const dbPath = process.env.DB_PATH || path.join(__dirname, '..', 'db.json');
 const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads');
@@ -31,7 +32,10 @@ function initialData() {
         jobs: [],
         skills: [BUILTIN_SKILL],
         notifications: [],
+        users: [],
+        sessions: [],
         settings: { default_skill_ids: [BUILTIN_SKILL.id], default_skill_id: BUILTIN_SKILL.id },
+        user_settings: {},
         spu_config: { provider: 'forge3d', api_url: '', api_key: '' },
         notification_config: {
             email: { recipient: '', smtp_host: '', smtp_port: 465, smtp_secure: true, smtp_user: '', smtp_pass: '' },
@@ -41,7 +45,8 @@ function initialData() {
         nextId: 1,
         nextJobId: 1,
         nextSkillId: 1,
-        nextNotificationId: 1
+        nextNotificationId: 1,
+        nextUserId: 1
     };
 }
 
@@ -52,6 +57,9 @@ function normalizeDb(raw) {
     db.jobs = Array.isArray(db.jobs) ? db.jobs : [];
     db.skills = Array.isArray(db.skills) ? db.skills : [];
     db.notifications = Array.isArray(db.notifications) ? db.notifications : [];
+    db.users = Array.isArray(db.users) ? db.users : [];
+    db.sessions = Array.isArray(db.sessions) ? db.sessions : [];
+    db.user_settings = db.user_settings && typeof db.user_settings === 'object' ? db.user_settings : {};
     if (!db.skills.some(skill => skill.id === BUILTIN_SKILL.id)) db.skills.unshift(BUILTIN_SKILL);
     db.settings = { ...defaults.settings, ...(db.settings || {}) };
     if (!Array.isArray(db.settings.default_skill_ids)) db.settings.default_skill_ids = [db.settings.default_skill_id || BUILTIN_SKILL.id];
@@ -68,6 +76,7 @@ function normalizeDb(raw) {
     db.nextJobId = Number.isInteger(db.nextJobId) ? db.nextJobId : 1;
     db.nextSkillId = Number.isInteger(db.nextSkillId) ? db.nextSkillId : 1;
     db.nextNotificationId = Number.isInteger(db.nextNotificationId) ? db.nextNotificationId : 1;
+    db.nextUserId = Number.isInteger(db.nextUserId) ? db.nextUserId : 1;
     return db;
 }
 
@@ -158,11 +167,11 @@ const modelDb = {
 };
 
 const skillDb = {
-    list() {
-        return clone(readDb().skills.filter(skill => skill.enabled !== false));
+    list(userId) {
+        return clone(readDb().skills.filter(skill => skill.enabled !== false && (userId === undefined || skill.builtin || skill.owner_id === userId)));
     },
-    findById(id) {
-        return clone(readDb().skills.find(skill => skill.id === id) || null);
+    findById(id, userId) {
+        return clone(readDb().skills.find(skill => skill.id === id && skill.enabled !== false && (userId === undefined || skill.builtin || skill.owner_id === userId)) || null);
     },
     create(data) {
         return mutate(db => {
@@ -175,6 +184,7 @@ const skillDb = {
                 version: 1,
                 enabled: true,
                 builtin: false,
+                owner_id: data.owner_id ?? null,
                 created_at: now,
                 updated_at: now
             };
@@ -182,26 +192,110 @@ const skillDb = {
             return clone(skill);
         });
     },
-    delete(id) {
+    delete(id, userId) {
         return mutate(db => {
             const skill = db.skills.find(item => item.id === id);
-            if (!skill || skill.builtin) return false;
+            if (!skill || skill.builtin || (userId !== undefined && skill.owner_id !== userId)) return false;
             db.skills = db.skills.filter(item => item.id !== id);
             db.settings.default_skill_ids = (db.settings.default_skill_ids || []).filter(skillId => skillId !== id);
             db.settings.default_skill_id = db.settings.default_skill_ids[0] || BUILTIN_SKILL.id;
+            for (const settings of Object.values(db.user_settings)) {
+                settings.default_skill_ids = (settings.default_skill_ids || []).filter(skillId => skillId !== id);
+                settings.default_skill_id = settings.default_skill_ids[0] || BUILTIN_SKILL.id;
+            }
             return true;
         });
     }
 };
 
 const settingsDb = {
-    get() {
-        return clone(readDb().settings);
+    get(userId) {
+        const db = readDb();
+        if (userId === undefined) return clone(db.settings);
+        const settings = db.user_settings[String(userId)] || { default_skill_ids: [BUILTIN_SKILL.id], default_skill_id: BUILTIN_SKILL.id };
+        return clone(settings);
     },
-    save(data) {
+    save(data, userId) {
         return mutate(db => {
+            if (userId !== undefined) {
+                const ids = [...new Set([BUILTIN_SKILL.id, ...(data.default_skill_ids || [])])];
+                if (ids.some(id => !db.skills.some(skill => skill.id === id && (skill.builtin || skill.owner_id === userId)))) throw new Error('只能固定自己的 Skill');
+                db.user_settings[String(userId)] = { default_skill_ids: ids, default_skill_id: ids[0] };
+                return clone(db.user_settings[String(userId)]);
+            }
             db.settings = { ...db.settings, ...data };
             return clone(db.settings);
+        });
+    }
+};
+
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 天
+
+// ---------- 统一账号用户（密码只存在账号中心，本地仅存 ssoSubject 关联键） ----------
+const userDb = {
+    findById(id) {
+        return clone(readDb().users.find(user => user.id === Number(id)) || null);
+    },
+    findBySsoSubjectOrEmail(ssoSubject, email) {
+        return clone(readDb().users.find(user =>
+            (ssoSubject && user.ssoSubject === ssoSubject) ||
+            (email && (user.email === email || user.username === email))
+        ) || null);
+    },
+    // upsert：按 ssoSubject 或 email 命中则更新关联字段，未命中则插入（密码列写占位符）
+    upsertSsoUser(user) {
+        const displayName = String(user.name || user.email.split('@')[0]).trim().slice(0, 40);
+        return mutate(db => {
+            const existing = db.users.find(item =>
+                (user.id && item.ssoSubject === user.id) ||
+                (user.email && (item.email === user.email || item.username === user.email))
+            );
+            if (existing) {
+                existing.email = user.email;
+                existing.ssoSubject = user.id;
+                existing.displayName = displayName;
+                return clone(existing);
+            }
+            const id = db.nextUserId++;
+            const local = {
+                id,
+                username: user.email,
+                password: `sso:${crypto.randomBytes(16).toString('hex')}`,
+                email: user.email,
+                ssoSubject: user.id,
+                displayName,
+                isAdmin: 0,
+                createdAt: new Date().toISOString()
+            };
+            db.users.push(local);
+            return clone(local);
+        });
+    }
+};
+
+// ---------- 本地会话：随机 token + HttpOnly Cookie，30 天有效 ----------
+const sessionDb = {
+    create(userId) {
+        const token = crypto.randomBytes(32).toString('base64url');
+        const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
+        mutate(db => {
+            db.sessions.push({ token, userId, expiresAt, createdAt: new Date().toISOString() });
+        });
+        return token;
+    },
+    // 返回 { user, session }；token 不存在或已过期返回 null
+    findByToken(token) {
+        if (!token) return null;
+        const session = readDb().sessions.find(item => item.token === token && new Date(item.expiresAt) > new Date());
+        if (!session) return null;
+        const user = userDb.findById(session.userId);
+        return user ? { user, session } : null;
+    },
+    deleteByToken(token) {
+        return mutate(db => {
+            const before = db.sessions.length;
+            db.sessions = db.sessions.filter(item => item.token !== token);
+            return before !== db.sessions.length;
         });
     }
 };
@@ -218,6 +312,7 @@ const jobDb = {
                 progress_message: '已进入队列',
                 input: data.input,
                 skill_snapshot: data.skill_snapshot,
+                owner_id: data.owner_id ?? null,
                 requested_channels: data.requested_channels || [],
                 base_url: data.base_url || '',
                 attempt: 0,
@@ -236,8 +331,9 @@ const jobDb = {
     findById(id) {
         return clone(readDb().jobs.find(job => job.id === id) || null);
     },
-    list(limit = 30) {
+    list(limit = 30, userId) {
         return clone(readDb().jobs
+            .filter(job => userId === undefined || job.owner_id === userId)
             .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
             .slice(0, Math.max(1, Math.min(Number(limit) || 30, 100))));
     },
@@ -385,6 +481,8 @@ module.exports = {
     jobDb,
     notificationDb,
     configDb,
+    userDb,
+    sessionDb,
     getStats,
     dbPath,
     uploadDir,

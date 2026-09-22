@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="使用统一账号登录 3D 建模工作室。">
+    <title>登录 · 3D 建模工作室</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="login-page">
+    <main class="login-card">
+        <header class="login-brand">
+            <span class="app-bar-title">3D 建模工作室_</span>
+            <span class="login-subtitle">统一账号 · 一个邮箱跨站使用</span>
+        </header>
+
+        <nav class="auth-tabs" aria-label="登录方式">
+            <button class="auth-tab active" id="loginTabBtn" type="button">登录</button>
+            <button class="auth-tab" id="registerTabBtn" type="button">注册</button>
+        </nav>
+
+        <form class="auth-form" id="loginForm" novalidate>
+            <div class="form-group">
+                <label for="loginEmail">邮箱</label>
+                <input type="email" id="loginEmail" autocomplete="email" placeholder="you@example.com" required>
+            </div>
+            <div class="form-group">
+                <label for="loginPassword">密码</label>
+                <input type="password" id="loginPassword" autocomplete="current-password" placeholder="至少 6 位" required>
+            </div>
+            <button class="btn primary auth-submit" id="loginBtn" type="submit">登录</button>
+            <div class="auth-links">
+                <a href="/auth/forgot-password">忘记密码？</a>
+                <button class="text-button" id="ssoLoginBtn" type="button">使用统一账号登录（SSO）</button>
+            </div>
+        </form>
+
+        <form class="auth-form" id="registerForm" hidden novalidate>
+            <div class="form-group">
+                <label for="registerEmail">邮箱</label>
+                <input type="email" id="registerEmail" autocomplete="email" placeholder="you@example.com" required>
+            </div>
+            <div class="form-group code-row">
+                <label for="registerCode">邮箱验证码</label>
+                <div class="code-input-row">
+                    <input type="text" id="registerCode" inputmode="numeric" maxlength="6" placeholder="6 位数字" required>
+                    <button class="btn compact" id="sendCodeBtn" type="button">获取验证码</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="registerPassword">密码 <span>至少 6 位</span></label>
+                <input type="password" id="registerPassword" autocomplete="new-password" minlength="6" placeholder="设置登录密码" required>
+            </div>
+            <div class="form-group">
+                <label for="registerName">昵称 <span>可选</span></label>
+                <input type="text" id="registerName" maxlength="40" placeholder="显示名称">
+            </div>
+            <button class="btn primary auth-submit" id="registerBtn" type="submit">注册并登录</button>
+        </form>
+
+        <p class="auth-error" id="authError" role="alert" hidden></p>
+        <p class="auth-tip">登录后即可提交建模任务、管理 Skill 与通知设置。</p>
+    </main>
+
+    <script src="auth.js"></script>
+    <script>
+        const state = {
+            mode: 'login',
+            codeCooldown: 0
+        };
+
+        function showError(message) {
+            const box = document.getElementById('authError');
+            box.textContent = message;
+            box.hidden = false;
+        }
+
+        function hideError() {
+            document.getElementById('authError').hidden = true;
+        }
+
+        function switchTab(mode) {
+            state.mode = mode;
+            document.getElementById('loginTabBtn').classList.toggle('active', mode === 'login');
+            document.getElementById('registerTabBtn').classList.toggle('active', mode === 'register');
+            document.getElementById('loginForm').hidden = mode !== 'login';
+            document.getElementById('registerForm').hidden = mode !== 'register';
+            hideError();
+        }
+
+        function startCodeCooldown() {
+            const button = document.getElementById('sendCodeBtn');
+            state.codeCooldown = 60;
+            button.disabled = true;
+            const tick = () => {
+                if (state.codeCooldown <= 0) {
+                    button.disabled = false;
+                    button.textContent = '获取验证码';
+                    return;
+                }
+                button.textContent = `${state.codeCooldown}s 后重试`;
+                state.codeCooldown -= 1;
+                setTimeout(tick, 1000);
+            };
+            tick();
+        }
+
+        document.getElementById('loginTabBtn').addEventListener('click', () => switchTab('login'));
+        document.getElementById('registerTabBtn').addEventListener('click', () => switchTab('register'));
+
+        document.getElementById('ssoLoginBtn').addEventListener('click', () => AUTH_API.ssoStart());
+
+        document.getElementById('loginForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            hideError();
+            const email = document.getElementById('loginEmail').value.trim();
+            const password = document.getElementById('loginPassword').value;
+            if (!email || !password) return showError('请输入邮箱和密码');
+            const button = document.getElementById('loginBtn');
+            button.disabled = true;
+            button.textContent = '登录中…';
+            try {
+                const result = await AUTH_API.login(email, password);
+                if (!result.ok) throw new Error(result.data.error || '登录失败');
+                location.replace('/');
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                button.disabled = false;
+                button.textContent = '登录';
+            }
+        });
+
+        document.getElementById('sendCodeBtn').addEventListener('click', async (event) => {
+            const button = event.currentTarget;
+            const email = document.getElementById('registerEmail').value.trim();
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showError('请先输入有效的邮箱地址');
+            button.disabled = true;
+            try {
+                const result = await AUTH_API.requestRegistrationCode(email);
+                if (!result.ok) throw new Error(result.data.error || '验证码发送失败');
+                startCodeCooldown();
+                hideError();
+            } catch (error) {
+                button.disabled = false;
+                showError(error.message);
+            }
+        });
+
+        document.getElementById('registerForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            hideError();
+            const email = document.getElementById('registerEmail').value.trim();
+            const code = document.getElementById('registerCode').value.trim();
+            const password = document.getElementById('registerPassword').value;
+            const name = document.getElementById('registerName').value.trim();
+            if (!email || !code || !password) return showError('请填写邮箱、验证码和密码');
+            if (password.length < 6) return showError('密码至少 6 位');
+            const button = document.getElementById('registerBtn');
+            button.disabled = true;
+            button.textContent = '注册中…';
+            try {
+                const result = await AUTH_API.register(email, password, code, name);
+                if (!result.ok) throw new Error(result.data.error || '注册失败');
+                location.replace('/');
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                button.disabled = false;
+                button.textContent = '注册并登录';
+            }
+        });
+
+        if (new URLSearchParams(location.search).get('error') === 'sso') {
+            showError('统一登录未完成，请重新尝试或改用邮箱登录');
+        }
+    </script>
+</body>
+</html>

@@ -22,8 +22,10 @@ const {
     safeStringList,
     publicJob
 } = require('./utils');
+const { parseSeed } = require('./utils');
 const { getProviderConfig, startModelWorker } = require('./model-worker');
 const { getChannelStatus, sendChannel, startNotificationWorker } = require('./notifier');
+const { createAuthRouter, requireUser } = require('./auth');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -44,9 +46,15 @@ app.use((req, res, next) => {
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
     next();
 });
+// 统一账号认证：/auth/*、/me、/logout
+app.use(createAuthRouter());
 app.use('/vendor/three', express.static(path.join(__dirname, '..', 'node_modules', 'three')));
 app.use(express.static(path.join(__dirname, '..', 'public')));
-app.use('/models', express.static(modelDir, { fallthrough: false, immutable: true, maxAge: '1h' }));
+app.use('/models', requireUser, (req, res, next) => {
+    const model = modelDb.list().find(item => item.model_file === '/models' + req.path);
+    if (!model || jobDb.findById(model.job_id)?.owner_id !== req.user.id) return res.status(404).end();
+    next();
+}, express.static(modelDir, { fallthrough: false, maxAge: 0 }));
 
 const uploadStorage = multer.diskStorage({
     destination: uploadDir,
@@ -135,14 +143,14 @@ function limitJobSubmissions(req, res, next) {
     next();
 }
 
-app.get('/api/bootstrap', (req, res) => {
+app.get('/api/bootstrap', requireUser, (req, res) => {
     res.json({
         success: true,
         data: {
             provider: providerPublicConfig(),
             notifications: notificationPublicConfig(),
-            skills: skillDb.list().map(({ content, ...skill }) => ({ ...skill, content_length: content.length })),
-            settings: settingsDb.get(),
+            skills: skillDb.list(req.user.id).map(({ content, ...skill }) => ({ ...skill, content_length: content.length })),
+            settings: settingsDb.get(req.user.id),
             limits: { max_images: MAX_IMAGES, max_image_bytes: MAX_IMAGE_SIZE, max_total_bytes: MAX_TOTAL_SIZE },
             profiles: [
                 { id: 'xhs_mobile', name: '移动端标准', description: '生成更快，适合网页和移动端' },
@@ -157,47 +165,48 @@ app.get('/api/bootstrap', (req, res) => {
     });
 });
 
-app.get('/api/skills', (req, res) => {
-    res.json({ success: true, data: skillDb.list().map(({ content, ...skill }) => ({ ...skill, content_length: content.length })) });
+app.get('/api/skills', requireUser, (req, res) => {
+    res.json({ success: true, data: skillDb.list(req.user.id).map(({ content, ...skill }) => ({ ...skill, content_length: content.length })) });
 });
 
-app.post('/api/skills', skillUpload.single('skill_file'), (req, res) => {
+app.post('/api/skills', requireUser, skillUpload.single('skill_file'), (req, res) => {
     try {
         const text = req.file ? req.file.buffer.toString('utf8') : String(req.body.content || '');
         if (text.length > 6000) return res.status(400).json({ success: false, error: 'Skill 内容不能超过 6000 字' });
         const parsed = parseSkillDocument(text, String(req.body.name || req.file?.originalname || '自定义 Skill').replace(/\.[^.]+$/, ''));
         if (req.body.name) parsed.name = String(req.body.name).trim().slice(0, 60);
-        const skill = skillDb.create(parsed);
+        const skill = skillDb.create({ ...parsed, owner_id: req.user.id });
         res.status(201).json({ success: true, data: { ...skill, content: undefined, content_length: skill.content.length } });
     } catch (error) {
         res.status(400).json({ success: false, error: error.message });
     }
 });
 
-app.delete('/api/skills/:id', (req, res) => {
-    const removed = skillDb.delete(req.params.id);
+app.delete('/api/skills/:id', requireUser, (req, res) => {
+    const removed = skillDb.delete(req.params.id, req.user.id);
     if (!removed) return res.status(400).json({ success: false, error: '内置 Skill 不能删除，或 Skill 不存在' });
     res.json({ success: true });
 });
 
-app.put('/api/settings/default-skill', (req, res) => {
-    const skill = skillDb.findById(req.body.skill_id);
+app.put('/api/settings/default-skill', requireUser, (req, res) => {
+    const skill = skillDb.findById(req.body.skill_id, req.user.id);
     if (!skill) return res.status(404).json({ success: false, error: 'Skill 不存在' });
-    res.json({ success: true, data: settingsDb.save({ default_skill_ids: [skill.id], default_skill_id: skill.id }) });
+    res.json({ success: true, data: settingsDb.save({ default_skill_ids: [skill.id], default_skill_id: skill.id }, req.user.id) });
 });
 
-app.put('/api/settings/default-skills', (req, res) => {
+app.put('/api/settings/default-skills', requireUser, (req, res) => {
     const requested = safeStringList(req.body.skill_ids);
-    const valid = requested.filter(id => skillDb.findById(id));
+    const valid = requested.filter(id => skillDb.findById(id, req.user.id));
+    if (valid.length !== requested.length) return res.status(400).json({ success: false, error: '只能固定自己的 Skill' });
     const skillIds = [...new Set(['skill-general', ...valid])];
-    res.json({ success: true, data: settingsDb.save({ default_skill_ids: skillIds, default_skill_id: skillIds[0] }) });
+    res.json({ success: true, data: settingsDb.save({ default_skill_ids: skillIds, default_skill_id: skillIds[0] }, req.user.id) });
 });
 
 app.get('/api/config/spu', (req, res) => {
     res.json({ success: true, data: providerPublicConfig() });
 });
 
-app.put('/api/config/spu', (req, res) => {
+app.put('/api/config/spu', requireUser, (req, res) => {
     try {
         const current = configDb.get();
         const apiUrl = String(req.body.api_url || '').trim();
@@ -218,7 +227,7 @@ app.get('/api/notification-config', (req, res) => {
     res.json({ success: true, data: notificationPublicConfig() });
 });
 
-app.put('/api/notification-config', (req, res) => {
+app.put('/api/notification-config', requireUser, (req, res) => {
     const current = configDb.getNotifications();
     const body = req.body || {};
     const next = {
@@ -239,7 +248,7 @@ app.put('/api/notification-config', (req, res) => {
     res.json({ success: true, data: notificationPublicConfig() });
 });
 
-app.post('/api/notification-config/test', async (req, res) => {
+app.post('/api/notification-config/test', requireUser, async (req, res) => {
     const channel = String(req.body.channel || '');
     if (!CHANNELS.includes(channel)) return res.status(400).json({ success: false, error: '未知通知通道' });
     try {
@@ -256,21 +265,22 @@ app.post('/api/notification-config/test', async (req, res) => {
     }
 });
 
-app.post('/api/jobs', limitJobSubmissions, imageUpload.array('images', MAX_IMAGES), (req, res) => {
+app.post('/api/jobs', requireUser, limitJobSubmissions, imageUpload.array('images', MAX_IMAGES), (req, res) => {
     let imageNames = [];
     try {
         if (!getProviderConfig().apiUrl) throw new Error('建模服务尚未配置，请先打开设置完成配置');
         imageNames = normalizeUploadedImages(req.files || []);
-        const settings = settingsDb.get();
-        const defaultSkills = (settings.default_skill_ids || [settings.default_skill_id]).map(id => skillDb.findById(id)).filter(Boolean);
+        const settings = settingsDb.get(req.user.id);
+        const defaultSkills = (settings.default_skill_ids || [settings.default_skill_id]).map(id => skillDb.findById(id, req.user.id)).filter(Boolean);
         const extraIds = safeStringList(req.body.skill_ids).slice(0, 3);
-        const extraSkills = extraIds.map(id => skillDb.findById(id)).filter(Boolean);
+        const extraSkills = extraIds.map(id => skillDb.findById(id, req.user.id)).filter(Boolean);
         const inlineSkill = String(req.body.inline_skill || '').trim();
         if (inlineSkill.length > 1000) throw new Error('本次临时 Skill 不能超过 1000 字');
         const prompt = String(req.body.prompt || '').trim();
         if (prompt.length > 1000) throw new Error('建模提示词不能超过 1000 字');
+        if (extraSkills.length !== extraIds.length) throw new Error('所选 Skill 不存在或不属于当前用户');
         const snapshot = createSkillSnapshot(defaultSkills, extraSkills, inlineSkill);
-        if (buildProviderPrompt(snapshot, prompt).length > 2000) throw new Error('提示词与 Skill 合并后超过 2000 字，请精简内容');
+        if (buildProviderPrompt(snapshot, prompt).length > 12000) throw new Error('提示词与 Skill 合并后超过 12000 字，请精简内容');
         const assetKind = ASSET_KINDS.includes(req.body.asset_kind) ? req.body.asset_kind : 'prop';
         const profile = PROFILES.includes(req.body.profile) ? req.body.profile : 'xhs_mobile';
         const availableChannels = getChannelStatus();
@@ -278,8 +288,9 @@ app.post('/api/jobs', limitJobSubmissions, imageUpload.array('images', MAX_IMAGE
         let name = String(req.body.name || path.parse(req.files[0].originalname).name || '新模型').trim().slice(0, 80);
         if (name.length < 2) name = `${name || '新'}模型`;
         const job = jobDb.create({
+            owner_id: req.user.id,
             name,
-            input: { images: imageNames, prompt, asset_kind: assetKind, profile, seed: Number(req.body.seed) || 1234 },
+            input: { images: imageNames, prompt, asset_kind: assetKind, profile, seed: parseSeed(req.body.seed) },
             skill_snapshot: snapshot,
             requested_channels: requestedChannels,
             base_url: process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`
@@ -293,19 +304,19 @@ app.post('/api/jobs', limitJobSubmissions, imageUpload.array('images', MAX_IMAGE
     }
 });
 
-app.get('/api/jobs', (req, res) => {
-    res.json({ success: true, data: jobDb.list(req.query.limit).map(jobWithNotifications) });
+app.get('/api/jobs', requireUser, (req, res) => {
+    res.json({ success: true, data: jobDb.list(req.query.limit, req.user.id).map(jobWithNotifications) });
 });
 
-app.get('/api/jobs/:id', (req, res) => {
+app.get('/api/jobs/:id', requireUser, (req, res) => {
     const job = jobDb.findById(req.params.id);
-    if (!job) return res.status(404).json({ success: false, error: '任务不存在' });
+    if (!job || job.owner_id !== req.user.id) return res.status(404).json({ success: false, error: '任务不存在' });
     res.json({ success: true, data: jobWithNotifications(job) });
 });
 
-app.post('/api/jobs/:id/retry', (req, res) => {
+app.post('/api/jobs/:id/retry', requireUser, (req, res) => {
     const job = jobDb.findById(req.params.id);
-    if (!job) return res.status(404).json({ success: false, error: '任务不存在' });
+    if (!job || job.owner_id !== req.user.id) return res.status(404).json({ success: false, error: '任务不存在' });
     if (job.status !== 'failed') return res.status(400).json({ success: false, error: '只有失败任务可以重试' });
     const next = jobDb.update(job.id, {
         status: 'queued',
@@ -319,19 +330,19 @@ app.post('/api/jobs/:id/retry', (req, res) => {
     res.json({ success: true, data: jobWithNotifications(next) });
 });
 
-app.get('/api/models', (req, res) => {
-    res.json({ success: true, data: modelDb.list() });
+app.get('/api/models', requireUser, (req, res) => {
+    res.json({ success: true, data: modelDb.list().filter(model => jobDb.findById(model.job_id)?.owner_id === req.user.id) });
 });
 
-app.get('/api/models/:id', (req, res) => {
+app.get('/api/models/:id', requireUser, (req, res) => {
     const model = modelDb.findById(req.params.id);
-    if (!model) return res.status(404).json({ success: false, error: '模型不存在' });
+    if (!model || jobDb.findById(model.job_id)?.owner_id !== req.user.id) return res.status(404).json({ success: false, error: '模型不存在' });
     res.json({ success: true, data: model });
 });
 
-app.delete('/api/models/:id', (req, res) => {
+app.delete('/api/models/:id', requireUser, (req, res) => {
     const model = modelDb.findById(req.params.id);
-    if (!model) return res.status(404).json({ success: false, error: '模型不存在' });
+    if (!model || jobDb.findById(model.job_id)?.owner_id !== req.user.id) return res.status(404).json({ success: false, error: '模型不存在' });
     if (model.model_file) {
         const modelPath = path.join(modelDir, path.basename(model.model_file));
         if (fs.existsSync(modelPath)) fs.unlinkSync(modelPath);

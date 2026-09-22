@@ -14,6 +14,13 @@ function hashText(value) {
     return crypto.createHash('sha256').update(value || '', 'utf8').digest('hex');
 }
 
+function parseSeed(value) {
+    if (value === undefined || value === null || value === '') return 1234;
+    const seed = Number(value);
+    if (!Number.isInteger(seed) || seed < 0 || seed > 2 ** 32 - 1) throw new Error('随机种子必须为 0～4294967295 的整数');
+    return seed;
+}
+
 function parseSkillDocument(text, fallbackName = '自定义 Skill') {
     const normalized = String(text || '').replace(/^\uFEFF/, '').trim();
     if (!normalized) throw new Error('Skill 内容不能为空');
@@ -42,6 +49,7 @@ function createSkillSnapshot(defaultSkill, extraSkills = [], inlineSkill = '') {
         id: skill.id,
         name: skill.name,
         version: skill.version || 1,
+        mandatory: defaults.some(item => item.id === skill.id),
         content: skill.content,
         sha256: hashText(skill.content)
     }));
@@ -80,7 +88,7 @@ function safeStringList(value, allowlist) {
 function publicSkillSnapshot(snapshot) {
     if (!snapshot) return null;
     return {
-        entries: (snapshot.entries || []).map(item => ({ id: item.id, name: item.name, version: item.version, sha256: item.sha256, temporary: Boolean(item.temporary) })),
+        entries: (snapshot.entries || []).map(item => ({ id: item.id, name: item.name, version: item.version, sha256: item.sha256, mandatory: Boolean(item.mandatory), temporary: Boolean(item.temporary) })),
         sha256: snapshot.sha256
     };
 }
@@ -95,6 +103,7 @@ function publicJob(job, deliveries = []) {
 }
 
 module.exports = {
+    parseSeed,
     detectImageType,
     hashText,
     parseSkillDocument,

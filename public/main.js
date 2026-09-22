@@ -28,6 +28,10 @@ const statusLabels = {
 
 async function api(path, options = {}) {
     const response = await fetch(`${API_BASE}${path}`, options);
+    if (response.status === 401 && !location.pathname.endsWith('/login.html')) {
+        location.replace('/login.html');
+        throw new Error('登录已过期，请重新登录');
+    }
     const text = await response.text();
     let payload;
     try { payload = text ? JSON.parse(text) : {}; } catch { throw new Error(`服务器返回异常（HTTP ${response.status}）`); }
@@ -75,15 +79,19 @@ function initScene() {
     scene.add(ground);
     scene.add(new THREE.GridHelper(20, 20, 0x97b39b, 0xc4ccc3));
     window.addEventListener('resize', resizeRenderer);
+    new ResizeObserver(resizeRenderer).observe(document.getElementById('taskProgress'));
+    resizeRenderer();
     animate();
 }
 
 function resizeRenderer() {
     const viewport = document.querySelector('.viewport');
     if (!viewport?.clientWidth || !viewport?.clientHeight) return;
-    camera.aspect = viewport.clientWidth / viewport.clientHeight;
+    const progress = document.getElementById('taskProgress');
+    const height = Math.max(160, viewport.clientHeight - (progress?.offsetHeight || 125) - 28);
+    camera.aspect = viewport.clientWidth / height;
     camera.updateProjectionMatrix();
-    renderer.setSize(viewport.clientWidth, viewport.clientHeight);
+    renderer.setSize(viewport.clientWidth, height);
 }
 
 function animate() {
@@ -328,7 +336,7 @@ async function toggleDefaultSkill(skillId) {
         const next = current.includes(skillId) ? current.filter(id => id !== skillId) : [...current, skillId];
         await api('/settings/default-skills', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ skill_ids: next }) });
         await reloadBootstrap();
-        showToast('固定 Skill 已更新');
+        showToast('我的每次必用 Skill 已更新');
     } catch (error) { showToast(error.message, true); }
 }
 
@@ -388,7 +396,13 @@ async function renderActiveJob() {
     const retry = document.getElementById('retryJobBtn');
     const steps = [...document.querySelectorAll('#progressSteps li')];
     steps.forEach(item => { item.className = ''; });
+    if (!job || job.status !== 'succeeded') {
+        disposeCurrentModel();
+        document.getElementById('emptyView').hidden = false;
+        document.getElementById('viewerToolbar').hidden = true;
+    }
     if (!job) {
+        document.getElementById('skillExecution')?.replaceChildren();
         title.textContent = '尚未提交任务';
         chip.textContent = '等待开始';
         chip.className = 'status-chip';
@@ -400,6 +414,38 @@ async function renderActiveJob() {
     chip.textContent = statusLabels[job.status] || job.status;
     chip.className = `status-chip ${job.status}`;
     message.textContent = job.error?.message || job.progress_message || '正在处理';
+    let execution = document.getElementById('skillExecution');
+    if (!execution) {
+        execution = document.createElement('div');
+        execution.id = 'skillExecution';
+        execution.className = 'step-copy';
+        message.after(execution);
+    }
+    execution.replaceChildren();
+    const fixed = (job.skill_snapshot?.entries || []).filter(item => item.mandatory).map(item => item.name);
+    const summary = document.createElement('p');
+    summary.textContent = `本次已使用：${(job.skill_snapshot?.entries || []).map(item => item.name).join('、') || '无'}${fixed.length ? `；个人必用：${fixed.join('、')}` : ''}`;
+    execution.append(summary);
+    if (job.execution_plan) {
+        const plan = job.execution_plan;
+        const applied = document.createElement('p');
+        applied.textContent = `执行参数：${plan.generation.triangle_budget.toLocaleString()} 面预算 · ${plan.generation.texture_size}px 纹理上限 · ${plan.generation.paint_views} 视角 · 粗糙度下限 ${plan.generation.roughness_floor}`;
+        execution.append(applied);
+        if (plan.material_prompt) {
+            const prompt = document.createElement('details');
+            const label = document.createElement('summary');
+            label.textContent = '查看实际材质提示词';
+            const content = document.createElement('p');
+            content.textContent = plan.material_prompt;
+            prompt.append(label, content);
+            execution.append(prompt);
+        }
+        if (plan.review_requirements?.length) {
+            const review = document.createElement('p');
+            review.textContent = `待效果验收（未保证实现）：${plan.review_requirements.join('；')}`;
+            execution.append(review);
+        }
+    }
     retry.hidden = job.status !== 'failed';
     const current = stageIndex(job.status);
     steps.forEach((item, index) => {
@@ -573,9 +619,28 @@ function bindEvents() {
         controls.autoRotate = !controls.autoRotate;
         event.currentTarget.classList.toggle('active', controls.autoRotate);
     });
+    document.getElementById('logoutBtn').addEventListener('click', async () => {
+        try { await AUTH_API.logout(); } finally { location.replace('/login.html'); }
+    });
+}
+
+// 统一账号守卫：未登录先跳登录页，登录后展示当前账号
+async function requireAuth() {
+    const user = await AUTH_API.me();
+    if (!user) {
+        location.replace('/login.html');
+        return null;
+    }
+    const chip = document.getElementById('currentUser');
+    chip.textContent = user.email;
+    chip.hidden = false;
+    document.getElementById('logoutBtn').hidden = false;
+    return user;
 }
 
 async function init() {
+    const user = await requireAuth();
+    if (!user) return;
     initScene();
     bindEvents();
     try {

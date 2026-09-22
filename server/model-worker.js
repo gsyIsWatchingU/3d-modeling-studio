@@ -2,8 +2,9 @@ const fs = require('fs');
 const path = require('path');
 const { configDb, jobDb, modelDb, uploadDir, modelDir } = require('./db');
 const { createReferenceBoard } = require('./image-board');
-const { buildProviderPrompt, validateGlbBuffer } = require('./utils');
+const { validateGlbBuffer } = require('./utils');
 const { enqueueJobNotifications } = require('./notifier');
+const { compileSkillPlan, SkillPlanError } = require('./skill-plan');
 
 const MAX_MODEL_BYTES = 300 * 1024 * 1024;
 const FORGE_READY_STATES = new Set(['review', 'completed', 'approved', 'succeeded', 'success']);
@@ -37,18 +38,27 @@ async function parseProviderResponse(response) {
 }
 
 async function submitJob(job, config) {
+    let plan = job.execution_plan;
+    if (!plan) {
+        jobDb.update(job.id, { progress_message: '正在解析个人 Skill 与建模要求' });
+        plan = await compileSkillPlan(job);
+        jobDb.update(job.id, { execution_plan: plan });
+    }
     const imagePaths = job.input.images.map(filename => path.join(uploadDir, path.basename(filename)));
     const boardPath = path.join(uploadDir, `reference-${job.id}.png`);
-    const sourcePath = await createReferenceBoard(imagePaths, boardPath);
+    // 单图生成器使用第一张作主参考，拼板仅保留为辅助证据，避免重复主体。
+    await createReferenceBoard(imagePaths, boardPath);
+    const sourcePath = imagePaths[0];
     const form = new FormData();
     const sourceBuffer = fs.readFileSync(sourcePath);
     const sourceName = path.basename(sourcePath);
     form.append('source', new Blob([sourceBuffer]), sourceName);
-    form.append('asset_name', job.name.slice(0, 80));
+    form.append('asset_name', `studio-${job.id.toLowerCase()}`);
     form.append('asset_kind', job.input.asset_kind);
     form.append('profile', job.input.profile);
-    form.append('prompt', buildProviderPrompt(job.skill_snapshot, job.input.prompt));
-    form.append('seed', String(job.input.seed || 1234));
+    form.append('prompt', `Skill 执行计划 ${plan.sha256}\n${JSON.stringify(plan.generation)}\n${job.input.prompt}\n待验收：${plan.review_requirements.join('；')}`.slice(0, 2000));
+    form.append('seed', String(job.input.seed ?? 1234));
+    form.append('skill_plan', JSON.stringify(plan));
 
     const response = await fetch(config.apiUrl, {
         method: 'POST',
@@ -59,6 +69,7 @@ async function submitJob(job, config) {
     const result = await parseProviderResponse(response);
 
     if (result.model_url) {
+        if (result.provenance?.skill_plan_sha256 !== plan.sha256) throw new PermanentJobError('GPU 服务未确认执行 Skill 参数，请更新建模服务');
         jobDb.update(job.id, { status: 'downloading', progress_message: '正在保存模型文件' });
         await finishWithRemoteModel(job, result.model_url, result);
         return;
@@ -73,6 +84,7 @@ async function submitJob(job, config) {
         provider: { name: config.provider, task_id: String(taskId), status_url: statusUrl },
         next_poll_at: new Date(Date.now() + 5000).toISOString()
     });
+    if (result.provenance?.skill_plan_sha256 !== plan.sha256) throw new PermanentJobError('GPU 服务未确认执行 Skill 参数，请更新建模服务');
 }
 
 function findOutput(result) {
@@ -183,7 +195,7 @@ async function finishWithRemoteModel(job, source, result = {}) {
 }
 
 function failOrRetry(job, error) {
-    const permanent = error instanceof PermanentJobError;
+    const permanent = error instanceof PermanentJobError || error instanceof SkillPlanError;
     const exhausted = permanent || job.attempt >= job.max_attempts;
     const errorData = { code: permanent ? 'invalid_request' : 'provider_error', message: error.message };
     if (exhausted) {
