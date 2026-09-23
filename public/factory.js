@@ -35,6 +35,7 @@ async function selectProject(id) {
     active = await api(`/projects/${id}`); runId = active.runs.at(-1)?.id || ''; previewKey = ''; filesKey = '';
     stageId = ''; stageRunId = ''; stageOutputKey = '';
     $('instructions').value = ''; $('reviewNotes').value = ''; $('played').checked = false;
+    $('advancedWorkspace').open = false;
     $('welcome').hidden = true; $('workspace').hidden = false;
     $('projectTitle').textContent = active.name; $('projectBrief').textContent = active.brief;
     history.replaceState(null, '', `/?project=${encodeURIComponent(id)}`); renderProjects(); renderRun(); renderWorkflow();
@@ -70,6 +71,8 @@ function renderRun() {
     $('release').hidden = !active.release;
     if (active.release) { $('releaseLink').href = `/api/factory/play/${active.release.token}/`; const r = active.runs.find(r => r.id === active.release.run_id); $('releaseLink').textContent = `打开已发布游戏 · 第 ${r?.version || '?'} 版 ↗`; }
     if (run?.notifications?.length) $('runStatus').textContent += ' / ' + run.notifications.map(n => `${n.channel}：${({ pending: '通知等待发送', sent: '通知已发送', sending: '正在通知', retry_wait: '通知等待重试', failed: '通知失败' })[n.status] || n.status}`).join(' · ');
+    $('deliverables').hidden = !run;
+    renderNextTask();
 }
 function runsForStage(id) { return (active?.stage_runs || []).filter(run => run.stage_id === id); }
 function selectedStageRun() { return (active?.stage_runs || []).find(run => run.id === stageRunId) || runsForStage(stageId).at(-1); }
@@ -95,6 +98,123 @@ function workflowState(stage) {
     const ids = stage.id === 'animation_audio' ? ['audio', 'animation'] : ['integration'];
     const done = ids.every(id => run.stages?.find(item => item.id === id)?.status === 'succeeded');
     return { text: done ? `第 ${run.version} 版完成` : labels[run.status], status: done ? 'succeeded' : run.status };
+}
+function setProjectFlow(current, completed = []) {
+    document.querySelectorAll('[data-flow]').forEach(item => {
+        item.classList.toggle('active', item.dataset.flow === current);
+        item.classList.toggle('done', completed.includes(item.dataset.flow));
+    });
+}
+function showTab(name) {
+    const button = document.querySelector(`[data-tab="${name}"]`);
+    if (button) button.click();
+    $('deliverables').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function openAdvanced(stage) {
+    $('advancedWorkspace').open = true;
+    if (stage) selectWorkflowStage(stage);
+    else $('advancedWorkspace').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function setNextTask({ kicker, title, description, primary, primaryAction, secondary, secondaryAction, flow, completed = [], progress = 0 }) {
+    $('nextKicker').textContent = kicker;
+    $('nextTitle').textContent = title;
+    $('nextDescription').textContent = description;
+    $('nextPrimary').textContent = primary;
+    $('nextPrimary').onclick = primaryAction;
+    $('nextSecondary').hidden = !secondary;
+    $('nextSecondary').textContent = secondary || '';
+    $('nextSecondary').onclick = secondaryAction || null;
+    $('nextProgress').hidden = !progress;
+    $('nextProgress').firstElementChild.style.width = `${progress}%`;
+    setProjectFlow(flow, completed);
+}
+function renderNextTask() {
+    if (!active || !capabilities) return;
+    const run = currentRun();
+    if (!run && active.stage_runs?.length) {
+        const stage = capabilities.workflow_stages.find(item => workflowState(item).status !== 'approved') || capabilities.workflow_stages.at(-1);
+        const state = workflowState(stage), awaitingReview = state.status === 'succeeded' || state.status === 'failed';
+        setNextTask({
+            kicker: awaitingReview ? '需要你确认' : '分阶段精修',
+            title: awaitingReview ? `${stage.name}已有新产物` : `下一步：${stage.name}`,
+            description: awaitingReview ? '查看实际产物，批准后再进入下一阶段；需要调整也可以直接留下修改意见。' : stage.description,
+            primary: awaitingReview ? '查看并处理 →' : `进入${stage.name} →`,
+            primaryAction: () => openAdvanced(stage.id),
+            secondary: '改为生成完整版本',
+            secondaryAction: () => { openAdvanced(); $('instructions').focus(); },
+            flow: 'production', completed: ['idea']
+        });
+        return;
+    }
+    if (!run) {
+        setNextTask({
+            kicker: '下一步', title: '生成第一个可玩版本',
+            description: 'AI 会在后台完成策划、剧本、素材、声音与关卡组装；完成后回到这里试玩。',
+            primary: '开始生成可玩版本 →', primaryAction: () => $('produce').click(),
+            secondary: '我想分阶段精修', secondaryAction: () => openAdvanced('design'),
+            flow: 'production', completed: ['idea']
+        });
+        return;
+    }
+    if (['queued', 'running'].includes(run.status)) {
+        const current = run.stages?.find(item => item.status === 'running') || run.stages?.find(item => item.status === 'pending');
+        const done = run.stages?.filter(item => item.status === 'succeeded').length || 0;
+        const total = run.stages?.length || capabilities.stages.length || 1;
+        setNextTask({
+            kicker: 'AI 正在后台制作', title: current ? `当前：${current.name}` : '任务已进入生产队列',
+            description: `已完成 ${done} / ${total} 个制作环节。可以关闭页面，生产不会中断。`,
+            primary: '查看制作进度', primaryAction: () => { openAdvanced(); document.querySelector('.production-panel').scrollIntoView({ behavior: 'smooth' }); },
+            flow: 'production', completed: ['idea'], progress: Math.max(4, Math.round(done / total * 100))
+        });
+        return;
+    }
+    if (run.status === 'failed') {
+        const failed = run.stages?.find(item => item.status === 'failed');
+        setNextTask({
+            kicker: '需要处理', title: `${failed?.name || '游戏制作'}未完成`,
+            description: run.error || '保留已完成内容，只重试失败的制作环节。',
+            primary: '重试失败环节 →', primaryAction: () => act(async () => { await api(`${base(run)}/retry`, { method: 'POST', body: '{}' }); await refresh(); }),
+            secondary: '查看错误详情', secondaryAction: () => { openAdvanced(); document.querySelector('.production-panel').scrollIntoView({ behavior: 'smooth' }); },
+            flow: 'production', completed: ['idea']
+        });
+        return;
+    }
+    if (run.status === 'cancelled') {
+        setNextTask({
+            kicker: '制作已暂停', title: '重新生成一个可玩版本', description: '上一次任务已取消，可以保留项目创意并重新开始。',
+            primary: '重新开始 →', primaryAction: () => $('produce').click(), secondary: '调整本次要求', secondaryAction: () => { openAdvanced(); $('instructions').focus(); },
+            flow: 'production', completed: ['idea']
+        });
+        return;
+    }
+    if (run.review?.status === 'approved') {
+        const published = Boolean(active.release);
+        setNextTask({
+            kicker: published ? '制作完成' : '最后一步',
+            title: published ? '游戏已经发布' : '下载工程或发布游戏',
+            description: published ? '公开试玩链接已生效，你仍可以下载完整工程或继续制作新版本。' : '这一版已经通过试玩验收，可以下载完整工程，也可以生成公开试玩链接。',
+            primary: published ? '打开公开游戏 ↗' : '查看交付选项 →',
+            primaryAction: published ? () => $('releaseLink').click() : () => showTab('review'),
+            secondary: '下载与文件', secondaryAction: () => showTab('files'),
+            flow: 'delivery', completed: published ? ['idea', 'production', 'review', 'delivery'] : ['idea', 'production', 'review']
+        });
+        return;
+    }
+    if (run.review?.status === 'changes_requested') {
+        setNextTask({
+            kicker: '继续修改', title: '根据试玩意见生成新版本', description: '旧版本和验收记录会保留。先写清要改什么，再开始一次新的完整生产。',
+            primary: '填写修改要求 →', primaryAction: () => { openAdvanced(); $('instructions').focus(); },
+            secondary: '再次试玩', secondaryAction: () => showTab('preview'),
+            flow: 'production', completed: ['idea']
+        });
+        return;
+    }
+    setNextTask({
+        kicker: '下一步', title: '试玩并验收这个版本', description: '请亲自检查操作、画面和声音。确认通过后，才会开放发布。',
+        primary: '开始试玩 →', primaryAction: () => showTab('preview'),
+        secondary: '查看文件', secondaryAction: () => showTab('files'),
+        flow: 'review', completed: ['idea', 'production']
+    });
 }
 function renderWorkflow() {
     if (!active || !capabilities?.workflow_stages) return;
@@ -179,10 +299,13 @@ async function showFile(route, filename) {
     }
     const p = document.createElement('p'), link = document.createElement('a'); link.href = url; link.download = filename.split('/').at(-1); link.textContent = '下载此文件'; p.append(link); $('filePreview').append(p);
 }
-$('newProject').onclick = () => { active = null; runId = ''; stageId = ''; stageRunId = ''; $('workspace').hidden = true; $('welcome').hidden = false; $('stageWorkspace').hidden = true; $('preview').removeAttribute('src'); previewKey = ''; filesKey = ''; stageOutputKey = ''; history.replaceState(null, '', '/'); renderProjects(); $('name').focus(); };
+$('newProject').onclick = () => { active = null; runId = ''; stageId = ''; stageRunId = ''; $('workspace').hidden = true; $('welcome').hidden = false; $('stageWorkspace').hidden = true; $('advancedWorkspace').open = false; $('preview').removeAttribute('src'); previewKey = ''; filesKey = ''; stageOutputKey = ''; $('createForm').reset(); $('toast').hidden = true; history.replaceState(null, '', '/'); renderProjects(); $('brief').focus(); };
 $('createForm').onsubmit = event => { event.preventDefault(); act(async () => {
     $('create').disabled = true;
-    try { const p = await api('/projects', { method: 'POST', body: JSON.stringify({ name: $('name').value, brief: $('brief').value, style: $('style').value || undefined }) }); await refresh(); await selectProject(p.id); toast('项目已创建，点击开始完整生产'); }
+    const brief = $('brief').value.trim();
+    const suggestedName = brief.split(/[。！？!?.，,\n]/)[0].trim();
+    const name = $('name').value.trim() || `${suggestedName.slice(0, 12)}${suggestedName.length > 12 ? '…' : ''}` || '我的游戏';
+    try { const p = await api('/projects', { method: 'POST', body: JSON.stringify({ name, brief, style: $('style').value || undefined }) }); await refresh(); await selectProject(p.id); toast('项目已创建，下一步已经为你准备好'); }
     finally { $('create').disabled = false; }
 }); };
 $('produce').onclick = () => act(async () => {

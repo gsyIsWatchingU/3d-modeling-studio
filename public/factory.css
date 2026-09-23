@@ -124,7 +124,7 @@ input:-webkit-autofill:focus {
 .sidebar-note p { line-height: 1.8; }
 .dot { width: 8px; height: 8px; background: var(--pixel-green); border: 1px solid var(--pixel-ink); display: inline-block; margin-right: 6px; }
 
-main { padding: 40px; max-width: 1540px; width: 100%; margin: 0 auto; min-width: 0; }
+main { padding: 40px; max-width: 1320px; width: 100%; margin: 0 auto; min-width: 0; }
 
 /* ==================== 标题与文案 ==================== */
 .eyebrow { color: var(--pixel-green-strong); font-size: 11px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; }
@@ -132,6 +132,32 @@ h1 { font-size: 36px; letter-spacing: -1px; line-height: 1.3; margin: 12px 0; }
 h2 { font-size: 18px; margin: 0; }
 h3 { font-size: 16px; margin: 8px 0; }
 .lead { font-size: 16px; color: var(--pixel-ink-secondary); margin: 16px 0 30px; }
+
+/* ==================== 新用户起步 ==================== */
+.welcome { max-width: 1040px; }
+.journey {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 24px 0;
+    color: var(--pixel-ink-secondary);
+}
+.journey > div { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.journey b {
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    border: 1px solid var(--pixel-border-soft);
+    background: var(--pixel-surface);
+    font-size: 11px;
+}
+.journey span { display: grid; gap: 3px; }
+.journey strong { color: var(--pixel-ink); font-size: 12px; white-space: nowrap; }
+.journey small { font-size: 10px; white-space: nowrap; }
+.journey .active b { border: var(--pixel-border); background: var(--pixel-green); }
+.journey i { flex: 1; min-width: 14px; text-align: center; font-style: normal; }
 
 /* ==================== 流程条与创建卡片 ==================== */
 .pipeline {
@@ -153,9 +179,12 @@ h3 { font-size: 16px; margin: 8px 0; }
 }
 .pipeline i { font-style: normal; color: var(--pixel-ink-secondary); font-weight: 800; }
 
-.create-card { background: var(--pixel-surface); padding: 28px; border: var(--pixel-border); max-width: 1000px; }
+.create-card { background: var(--pixel-surface); padding: 28px; border: var(--pixel-border); max-width: 920px; }
 .section-head p { margin: 4px 0 0; color: var(--pixel-ink-secondary); font-size: 12px; }
 .tag { border: var(--pixel-border); padding: 4px 10px; font-size: 11px; white-space: nowrap; background: var(--pixel-green); font-weight: 700; }
+.optional { font-size: 10px; font-weight: 400; color: var(--pixel-ink-secondary); }
+.more-settings { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--pixel-border-soft); }
+.more-settings summary { font-size: 11px; font-weight: 700; color: var(--pixel-green-strong); }
 
 /* ==================== 表单 ==================== */
 label { display: block; font-size: 11px; font-weight: 600; margin: 18px 0 6px; color: var(--pixel-ink-secondary); }
@@ -225,6 +254,37 @@ button:disabled {
 .project-heading { align-items: flex-start; margin-bottom: 26px; }
 .project-heading h1 { font-size: 29px; }
 .project-heading p { max-width: 800px; white-space: pre-wrap; color: var(--pixel-ink-secondary); font-size: 12px; }
+.compact-action { min-height: 34px; white-space: nowrap; }
+.project-flow { display: flex; align-items: center; margin-bottom: 16px; }
+.project-flow > div { display: flex; align-items: center; gap: 7px; color: var(--pixel-ink-secondary); font-size: 11px; white-space: nowrap; }
+.project-flow b { width: 24px; height: 24px; display: grid; place-items: center; border: 1px solid var(--pixel-border-soft); background: var(--pixel-surface); font-size: 10px; }
+.project-flow i { height: 1px; flex: 1; min-width: 20px; margin: 0 10px; background: var(--pixel-border-soft); }
+.project-flow .done { color: var(--pixel-green-strong); font-weight: 800; }
+.project-flow .done b { border-color: var(--pixel-green-strong); background: var(--pixel-green-hover); }
+.project-flow .done b::after { content: '✓'; font-size: 10px; }
+.project-flow .done b { font-size: 0; }
+.project-flow .active { color: var(--pixel-ink); font-weight: 800; }
+.project-flow .active b { border: var(--pixel-border); background: var(--pixel-green); }
+
+.next-task { display: flex; align-items: center; justify-content: space-between; gap: 36px; padding: 28px; background: var(--pixel-green-hover); border-left-width: 8px; }
+.next-task-copy { min-width: 0; flex: 1; }
+.next-task h2 { margin: 7px 0 8px; font-size: 24px; }
+.next-task p { margin: 0; color: var(--pixel-ink-secondary); font-size: 13px; line-height: 1.8; max-width: 720px; }
+.next-task-actions { min-width: 220px; display: grid; gap: 8px; }
+.next-task-actions button { width: 100%; }
+.next-progress { height: 8px; margin-top: 16px; max-width: 620px; border: 1px solid var(--pixel-ink); background: var(--pixel-surface); }
+.next-progress span { display: block; height: 100%; width: 0; background: var(--pixel-green-strong); transition: width 180ms ease; }
+
+.advanced-workspace { margin-top: 16px; }
+.advanced-workspace > summary { list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; border: 1px solid var(--pixel-border-soft); background: var(--pixel-surface); }
+.advanced-workspace > summary::-webkit-details-marker { display: none; }
+.advanced-workspace > summary::before { content: '＋'; font-weight: 800; }
+.advanced-workspace[open] > summary::before { content: '－'; }
+.advanced-workspace > summary > span { display: grid; gap: 3px; margin-right: auto; }
+.advanced-workspace > summary strong { font-size: 12px; }
+.advanced-workspace > summary small { color: var(--pixel-ink-secondary); font-size: 10px; font-weight: 400; }
+.advanced-workspace > summary em { font-size: 10px; font-style: normal; color: var(--pixel-ink-secondary); }
+.advanced-content { display: grid; gap: 16px; padding: 16px; border: 1px solid var(--pixel-border-soft); border-top: 0; background: #eef1e9; }
 .guided-panel { margin-bottom: 20px; }
 .workflow-stages { display: grid; grid-template-columns: repeat(7, minmax(126px, 1fr)); gap: 8px; margin-top: 18px; }
 .workflow-card { min-height: 154px; padding: 12px; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; text-align: left; background: var(--pixel-page); border: 1px solid var(--pixel-border-soft); }
@@ -270,6 +330,7 @@ button:disabled {
 
 /* ==================== 交付物面板 ==================== */
 .tabs { display: flex; gap: 0; border-bottom: var(--pixel-border); margin-bottom: 18px; }
+.deliverables { margin-top: 20px; }
 .tabs button {
     min-height: 40px;
     padding: 8px 14px;
@@ -365,6 +426,8 @@ iframe { width: 100%; height: 680px; max-height: 80vh; border: var(--pixel-borde
     #account { display: none; }
     .artifact-grid { grid-template-columns: 1fr; }
     .pipeline { gap: 8px; padding: 12px 14px; font-size: 11px; }
+    .journey { gap: 8px; }
+    .journey i { margin: 0 2px; }
     .workflow-stages { grid-template-columns: repeat(4, minmax(130px, 1fr)); }
 }
 @media (max-width: 900px) {
@@ -372,6 +435,9 @@ iframe { width: 100%; height: 680px; max-height: 80vh; border: var(--pixel-borde
     .stages { display: grid; grid-template-columns: 1fr 1fr; column-gap: 16px; }
     .pipeline { flex-wrap: wrap; }
     .project-heading { flex-wrap: wrap; }
+    .next-task { align-items: flex-start; flex-direction: column; gap: 20px; }
+    .next-task-actions { width: 100%; min-width: 0; display: flex; }
+    .next-task-actions button { width: auto; }
     .workflow-stages { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
     .topbar { padding: 10px 18px; height: auto; min-height: 64px; }
     .topbar nav { flex-wrap: wrap; font-size: 11px; }
@@ -389,6 +455,9 @@ iframe { width: 100%; height: 680px; max-height: 80vh; border: var(--pixel-borde
     .brand-text span { font-size: 8px; }
     main { padding: 24px 14px; }
     .lead { font-size: 14px; }
+    .journey { display: grid; grid-template-columns: 1fr 1fr; align-items: start; }
+    .journey i { display: none; }
+    .journey > div { padding: 8px; border: 1px solid var(--pixel-border-soft); }
     .pipeline { font-size: 10px; gap: 8px; }
     .pipeline i { display: none; }
     .create-card { padding: 20px; }
@@ -402,6 +471,14 @@ iframe { width: 100%; height: 680px; max-height: 80vh; border: var(--pixel-borde
     iframe { height: 670px; max-height: none; }
     .empty { padding: 60px 10px; }
     .section-head { flex-wrap: wrap; }
+    .project-flow span { display: none; }
+    .project-flow i { margin: 0 6px; min-width: 10px; }
+    .next-task { padding: 20px 16px; }
+    .next-task h2 { font-size: 20px; }
+    .next-task-actions { display: grid; }
+    .next-task-actions button { width: 100%; }
+    .advanced-workspace > summary small, .advanced-workspace > summary em { display: none; }
+    .advanced-content { padding: 10px; }
     .workflow-stages { grid-template-columns: 1fr; }
     .workflow-card { min-height: 118px; }
 }

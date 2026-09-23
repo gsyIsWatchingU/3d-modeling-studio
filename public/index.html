@@ -1,16 +1,93 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="从创意、策划、剧本、素材和声音，到浏览器试玩、工程下载与发布。"><title>游戏生产工厂</title><link rel="icon" href="/icon.png" type="image/png"><link rel="stylesheet" href="/factory.css"></head>
-<body><header class="topbar"><a class="brand" href="/"><img class="brand-icon" src="/icon.png" alt=""><span class="brand-text"><b>游戏生产工厂_</b><span>GAME FACTORY</span></span></a><nav><a href="/modeling.html">3D 建模工位</a><a href="/modeling.html?settings=1">通知与 MCP</a><span id="account"></span><button id="logout" class="quiet">退出</button></nav></header>
-<div class="layout"><aside class="sidebar"><div class="sidebar-heading"><strong>我的游戏</strong><button id="newProject" class="small">＋ 新建</button></div><div id="projects" class="project-list"></div><div class="sidebar-note"><span class="dot"></span> 网站与 MCP 共用生产线<p>项目、固定 Skill、版本和产物保存在账号下，关闭页面后继续生产。</p></div></aside><main>
-<section id="welcome"><div class="eyebrow">从一个想法，到一款能玩的游戏</div><h1>把创意交给生产线。</h1><p class="lead">策划、剧本、美术、声音、动画、关卡与交付，在同一个项目中完成。</p><div class="pipeline"><span>01 策划与剧本</span><i>→</i><span>02 素材与声音</span><i>→</i><span>03 组装与试玩</span><i>→</i><span>04 验收与发布</span></div>
-<form id="createForm" class="create-card"><div class="section-head"><div><h2>开始制作</h2><p>当前产线：2D 俯视探索游戏 · 浏览器与手机可玩</p></div><span class="tag">完整工程交付</span></div><label for="name">游戏名称</label><input id="name" maxlength="80" required placeholder="例如：最后一座灯塔"><label for="brief">你想做一款怎样的游戏？</label><textarea id="brief" minlength="10" maxlength="4000" required rows="4" placeholder="描述世界、主角、目标和氛围。例如：小小守灯人穿过三座浮岛，寻找失散的光晶，与岛上的居民交谈，躲开巡逻机关，最后重新点亮灯塔。"></textarea><label for="style">美术方向</label><input id="style" maxlength="500" placeholder="例如：深蓝夜色、温暖灯光、简洁手绘感"><div class="form-footer"><p>包含移动、碰撞、收集、危险物、NPC 对话和多关卡；使用矢量美术与事件声音。</p><button type="submit" class="primary" id="create">创建游戏项目 →</button></div></form></section>
-<section id="workspace" hidden><div class="section-head project-heading"><div><div class="eyebrow">游戏项目 / 引导式生产</div><h1 id="projectTitle"></h1><p id="projectBrief"></p></div><button id="modeling" class="secondary">制作 3D 资产 ↗</button></div>
-<section class="guided-panel panel"><div class="section-head"><div><h2>分阶段制作</h2><p>按推荐顺序推进，也可以直接进入任一独立工位。每次生成都会保留后端版本，人工批准后再交给下一阶段。</p></div><span class="tag">可暂停 · 可续做</span></div><div id="workflowStages" class="workflow-stages"></div>
-<section id="stageWorkspace" class="stage-workspace" hidden><div class="section-head"><div><div class="eyebrow" id="stageNumber"></div><h3 id="stageTitle"></h3><p id="stageDescription"></p></div><select id="stageVersions" aria-label="阶段版本"></select></div><div id="stageDependency" class="stage-dependency"></div><div id="stagePrompt"><label for="stageInstructions">本阶段制作要求</label><textarea id="stageInstructions" rows="3" maxlength="3000" placeholder="描述这一步需要重点处理的内容；留空则按项目目标生成。"></textarea></div><div class="button-row"><button id="startStage" class="primary">开始本阶段</button><button id="openModeling" class="secondary" hidden>进入 3D 建模工位 ↗</button></div><div id="stageStatus" role="status"></div><div id="stageError" class="error" hidden></div><div id="stageOutput" class="stage-output"><p class="muted">选择阶段后可在这里查看最新产物。</p></div><div id="conceptUpload" hidden><label for="conceptImages">上传实际预览图</label><input id="conceptImages" type="file" accept="image/png,image/jpeg,image/webp" multiple><button id="uploadConcept" class="secondary">保存到当前阶段版本</button><p class="muted">制作单不是图片。请上传实际生成或绘制的预览图，最多 6 张、单张 10 MB。</p></div><div id="stageReview" hidden><label class="check"><input id="stageConfirmed" type="checkbox"> 我已检查当前阶段的实际产物</label><label for="stageReviewNotes">阶段验收记录</label><textarea id="stageReviewNotes" rows="2" minlength="5" maxlength="2000" placeholder="记录通过内容或需要修改的问题。"></textarea><div class="button-row"><button id="approveStage" class="secondary">批准本阶段</button><button id="rejectStage" class="quiet">需要修改</button></div></div></section></section>
-<div class="workspace-grid">
-<section class="production-panel panel"><div class="section-head"><h2>生产版本</h2><select id="versions" aria-label="生产版本"></select></div><div id="runStatus" role="status"></div><ol id="stages" class="stages"></ol><div id="runError" class="error" hidden></div><div id="runActions" class="button-row"></div><label for="instructions">本次制作要求</label><textarea id="instructions" rows="3" maxlength="3000" placeholder="首版可留空；迭代时描述要改什么，例如：第二关减少危险物，让对白更简短。"></textarea><label class="check"><input id="notify" type="checkbox"> 完成后通知我的飞书 <span id="notifyState"></span></label><button id="produce" class="primary wide">开始完整生产</button><p class="muted">固定 Skill 自动生效。生成内容先供试玩，人工验收后可公开发布。</p></section>
-<section class="deliverables panel"><div class="tabs" role="tablist"><button data-tab="preview" class="active" role="tab" aria-selected="true">在线试玩</button><button data-tab="files" role="tab" aria-selected="false">产物与文档</button><button data-tab="review" role="tab" aria-selected="false">验收与发布</button></div>
-<div id="tab-preview" class="tab-content"><div id="previewEmpty" class="empty"><span>▶</span><h3>你的游戏将在这里运行</h3><p>启动生产后，策划、素材、声音和玩法会自动组装。</p></div><iframe id="preview" title="游戏试玩" sandbox="allow-scripts" allow="autoplay" hidden></iframe><p class="muted">试玩区内点击开始后可操作；支持 WASD / 方向键和触屏。</p></div>
-<div id="tab-files" class="tab-content" hidden><div class="section-head"><h3>当前版本交付物</h3><a id="download" class="button secondary" hidden>下载完整工程 ZIP</a></div><div class="artifact-grid"><div id="files"></div><div id="filePreview" class="file-preview"><p class="muted">选择文档、图片或音频查看。</p></div></div></div>
-<div id="tab-review" class="tab-content" hidden><h3>检查记录</h3><div id="qaReport" class="muted">等待生产完成。</div><hr><h3>人工试玩验收</h3><p class="muted">自动检查覆盖结构、可达性和文件；玩法、美术、声音与设备性能需要实际试玩。</p><label class="check"><input type="checkbox" id="played"> 我已试玩当前版本并检查画面、操作与声音</label><label for="reviewNotes">验收记录</label><textarea id="reviewNotes" rows="3" minlength="5" maxlength="2000" placeholder="记录设备、通过的内容或需要修改的问题。"></textarea><div class="button-row"><button id="approve" class="secondary">验收通过</button><button id="reject" class="quiet">需要修改</button></div><p id="reviewState"></p><hr><div class="section-head"><div><h3>公开发布</h3><p class="muted">发布此版本的游戏链接，访客无需登录。后续修改不会覆盖已发布版本。</p></div><button id="publish" class="primary">发布此版本</button></div><div id="release" hidden><a id="releaseLink" target="_blank" rel="noopener">打开已发布游戏 ↗</a><button id="unpublish" class="quiet">撤回发布</button></div></div>
-</section></div></section></main></div><div id="toast" role="status" hidden></div><script src="/auth.js"></script><script src="/factory.js"></script></body></html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="description" content="从一个游戏想法开始，沿着清晰步骤完成制作、试玩与交付。">
+    <title>游戏生产工厂</title>
+    <link rel="icon" href="/icon.png" type="image/png">
+    <link rel="stylesheet" href="/factory.css">
+</head>
+<body>
+<header class="topbar">
+    <a class="brand" href="/"><img class="brand-icon" src="/icon.png" alt=""><span class="brand-text"><b>游戏生产工厂_</b><span>GAME FACTORY</span></span></a>
+    <nav><a href="/modeling.html">3D 建模工位</a><a href="/modeling.html?settings=1">通知与 MCP</a><span id="account"></span><button id="logout" class="quiet">退出</button></nav>
+</header>
+<div class="layout">
+    <aside class="sidebar">
+        <div class="sidebar-heading"><strong>我的游戏</strong><button id="newProject" class="small">＋ 新建</button></div>
+        <div id="projects" class="project-list"></div>
+        <div class="sidebar-note"><span class="dot"></span> 网站与 MCP 共用生产线<p>项目、版本和产物会自动保存，关闭页面后生产仍会继续。</p></div>
+    </aside>
+    <main>
+        <section id="welcome" class="welcome">
+            <div class="eyebrow">第一步 / 描述创意</div>
+            <h1>先告诉我们，你想做什么游戏。</h1>
+            <p class="lead">不用先懂策划、美术或代码。创建项目后，页面会一直告诉你当前进度和唯一的下一步。</p>
+            <div class="journey" aria-label="制作流程">
+                <div class="active"><b>1</b><span><strong>描述创意</strong><small>说清游戏想法</small></span></div><i>→</i>
+                <div><b>2</b><span><strong>生成游戏</strong><small>后台完成制作</small></span></div><i>→</i>
+                <div><b>3</b><span><strong>试玩验收</strong><small>亲自检查体验</small></span></div><i>→</i>
+                <div><b>4</b><span><strong>下载或发布</strong><small>拿到完整工程</small></span></div>
+            </div>
+            <form id="createForm" class="create-card">
+                <div class="section-head"><div><h2>描述你的游戏创意</h2><p>现在只需要完成这一件事，至少写清主角、目标和氛围。</p></div><span class="tag">约 1 分钟</span></div>
+                <label for="brief">你想做一款怎样的游戏？</label>
+                <textarea id="brief" minlength="10" maxlength="4000" required rows="5" autofocus placeholder="例如：小小守灯人穿过三座浮岛，寻找失散的光晶，与岛上的居民交谈，躲开巡逻机关，最后重新点亮灯塔。"></textarea>
+                <label for="name">给它一个名字 <span class="optional">可选</span></label>
+                <input id="name" maxlength="80" placeholder="留空时会根据创意自动命名">
+                <details class="more-settings"><summary>更多设置：指定美术方向</summary><label for="style">美术方向 <span class="optional">可选</span></label><input id="style" maxlength="500" placeholder="例如：深蓝夜色、温暖灯光、简洁手绘感"></details>
+                <div class="form-footer"><p>创建后先进入项目主页，不会立刻启动生产；你可以确认下一步再开始。</p><button type="submit" class="primary" id="create">创建项目，查看下一步 →</button></div>
+            </form>
+        </section>
+
+        <section id="workspace" hidden>
+            <div class="section-head project-heading"><div><div class="eyebrow">游戏项目</div><h1 id="projectTitle"></h1><p id="projectBrief"></p></div><button id="modeling" class="quiet compact-action">打开 3D 建模工位 ↗</button></div>
+            <nav id="projectFlow" class="project-flow" aria-label="项目进度"><div data-flow="idea"><b>1</b><span>创意</span></div><i></i><div data-flow="production"><b>2</b><span>制作</span></div><i></i><div data-flow="review"><b>3</b><span>试玩验收</span></div><i></i><div data-flow="delivery"><b>4</b><span>交付</span></div></nav>
+
+            <section class="next-task panel" aria-live="polite">
+                <div class="next-task-copy"><div class="eyebrow" id="nextKicker">下一步</div><h2 id="nextTitle">生成第一个可玩版本</h2><p id="nextDescription">AI 会在后台完成策划、剧本、素材、声音与关卡组装。</p><div id="nextProgress" class="next-progress" hidden><span></span></div></div>
+                <div class="next-task-actions"><button id="nextPrimary" class="primary">开始生成可玩版本 →</button><button id="nextSecondary" class="quiet">分阶段精修</button></div>
+            </section>
+
+            <details id="advancedWorkspace" class="advanced-workspace">
+                <summary><span><strong>分阶段精修与版本控制</strong><small>需要逐步生成、人工批准或定向迭代时再展开</small></span><em>高级控制</em></summary>
+                <div class="advanced-content">
+                    <section class="guided-panel panel">
+                        <div class="section-head"><div><h2>7 个独立制作工位</h2><p>按顺序逐步把关；这是精修路径，不会与上方的一键生成同时启动。</p></div><span class="tag">可暂停 · 可续做</span></div>
+                        <div id="workflowStages" class="workflow-stages"></div>
+                        <section id="stageWorkspace" class="stage-workspace" hidden>
+                            <div class="section-head"><div><div class="eyebrow" id="stageNumber"></div><h3 id="stageTitle"></h3><p id="stageDescription"></p></div><select id="stageVersions" aria-label="阶段版本"></select></div>
+                            <div id="stageDependency" class="stage-dependency"></div>
+                            <div id="stagePrompt"><label for="stageInstructions">本阶段制作要求</label><textarea id="stageInstructions" rows="3" maxlength="3000" placeholder="描述这一步需要重点处理的内容；留空则按项目目标生成。"></textarea></div>
+                            <div class="button-row"><button id="startStage" class="primary">开始本阶段</button><button id="openModeling" class="secondary" hidden>进入 3D 建模工位 ↗</button></div>
+                            <div id="stageStatus" role="status"></div><div id="stageError" class="error" hidden></div>
+                            <div id="stageOutput" class="stage-output"><p class="muted">选择阶段后可在这里查看最新产物。</p></div>
+                            <div id="conceptUpload" hidden><label for="conceptImages">上传实际预览图</label><input id="conceptImages" type="file" accept="image/png,image/jpeg,image/webp" multiple><button id="uploadConcept" class="secondary">保存到当前阶段版本</button><p class="muted">制作单不是图片。请上传实际生成或绘制的预览图，最多 6 张、单张 10 MB。</p></div>
+                            <div id="stageReview" hidden><label class="check"><input id="stageConfirmed" type="checkbox"> 我已检查当前阶段的实际产物</label><label for="stageReviewNotes">阶段验收记录</label><textarea id="stageReviewNotes" rows="2" minlength="5" maxlength="2000" placeholder="记录通过内容或需要修改的问题。"></textarea><div class="button-row"><button id="approveStage" class="secondary">批准本阶段</button><button id="rejectStage" class="quiet">需要修改</button></div></div>
+                        </section>
+                    </section>
+
+                    <section class="production-panel panel">
+                        <div class="section-head"><div><h2>完整生产与迭代</h2><p>首版可直接生成；之后在这里写明修改要求，创建新的保留版本。</p></div><select id="versions" aria-label="生产版本"></select></div>
+                        <div id="runStatus" role="status"></div><ol id="stages" class="stages"></ol><div id="runError" class="error" hidden></div><div id="runActions" class="button-row"></div>
+                        <label for="instructions">本次制作要求 <span class="optional">首版可留空</span></label><textarea id="instructions" rows="3" maxlength="3000" placeholder="例如：第二关减少危险物，让对白更简短。"></textarea>
+                        <label class="check"><input id="notify" type="checkbox"> 完成后通知我的飞书 <span id="notifyState"></span></label>
+                        <button id="produce" class="primary wide">开始完整生产</button><p class="muted">生成内容先供试玩，人工验收后才可公开发布。</p>
+                    </section>
+                </div>
+            </details>
+
+            <section id="deliverables" class="deliverables panel" hidden>
+                <div class="tabs" role="tablist"><button data-tab="preview" class="active" role="tab" aria-selected="true">试玩游戏</button><button data-tab="files" role="tab" aria-selected="false">文件与下载</button><button data-tab="review" role="tab" aria-selected="false">验收与发布</button></div>
+                <div id="tab-preview" class="tab-content"><div id="previewEmpty" class="empty"><span>▶</span><h3>游戏还在制作中</h3><p>完成后会自动出现在这里，你可以先关闭页面。</p></div><iframe id="preview" title="游戏试玩" sandbox="allow-scripts" allow="autoplay" hidden></iframe><p class="muted">试玩区内点击开始后可操作；支持 WASD / 方向键和触屏。</p></div>
+                <div id="tab-files" class="tab-content" hidden><div class="section-head"><h3>当前版本交付物</h3><a id="download" class="button secondary" hidden>下载完整工程 ZIP</a></div><div class="artifact-grid"><div id="files"></div><div id="filePreview" class="file-preview"><p class="muted">选择文档、图片或音频查看。</p></div></div></div>
+                <div id="tab-review" class="tab-content" hidden><h3>检查记录</h3><div id="qaReport" class="muted">等待生产完成。</div><hr><h3>人工试玩验收</h3><p class="muted">自动检查覆盖结构、可达性和文件；玩法、美术、声音与设备性能需要实际试玩。</p><label class="check"><input type="checkbox" id="played"> 我已试玩当前版本并检查画面、操作与声音</label><label for="reviewNotes">验收记录</label><textarea id="reviewNotes" rows="3" minlength="5" maxlength="2000" placeholder="记录设备、通过的内容或需要修改的问题。"></textarea><div class="button-row"><button id="approve" class="secondary">验收通过</button><button id="reject" class="quiet">需要修改</button></div><p id="reviewState"></p><hr><div class="section-head"><div><h3>公开发布</h3><p class="muted">发布此版本的游戏链接，访客无需登录。后续修改不会覆盖已发布版本。</p></div><button id="publish" class="primary">发布此版本</button></div><div id="release" hidden><a id="releaseLink" target="_blank" rel="noopener">打开已发布游戏 ↗</a><button id="unpublish" class="quiet">撤回发布</button></div></div>
+            </section>
+        </section>
+    </main>
+</div>
+<div id="toast" role="status" hidden></div>
+<script src="/auth.js"></script><script src="/factory.js"></script>
+</body>
+</html>
