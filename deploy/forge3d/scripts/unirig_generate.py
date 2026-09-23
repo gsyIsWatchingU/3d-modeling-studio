@@ -26,6 +26,7 @@ def main() -> None:
     parser.add_argument("--blender", required=True)
     parser.add_argument("--rig-analyzer", required=True)
     parser.add_argument("--rig-limits-json", default="{}")
+    parser.add_argument("--skeleton-only", action="store_true")
     args = parser.parse_args()
     repo = Path(args.repo)
     output = Path(args.output)
@@ -41,6 +42,13 @@ def main() -> None:
     skin_npz.mkdir(parents=True)
     env = os.environ.copy()
     env["PATH"] = f"{Path(args.python).parent}:{env.get('PATH', '')}"
+    shared_hf_cache = Path("/workspace/models/forge3d/huggingface")
+    if shared_hf_cache.is_dir():
+        env.setdefault("HF_HOME", str(shared_hf_cache))
+        # Production weights are installed ahead of time. Fail immediately when a
+        # dependency is incomplete instead of waiting through remote HEAD retries.
+        env.setdefault("HF_HUB_OFFLINE", "1")
+        env.setdefault("TRANSFORMERS_OFFLINE", "1")
 
     run([
         "bash", "launch/inference/extract.sh", "--input", args.input,
@@ -58,6 +66,9 @@ def main() -> None:
         str(skeleton_report), "--rig-limits-json", args.rig_limits_json,
         "--fail-on-violation",
     ], cwd=repo, env=env, expected=skeleton_report)
+    if args.skeleton_only:
+        print(f"骨架探针通过: {skeleton_report}", flush=True)
+        return
     run([
         "bash", "launch/inference/extract.sh", "--input", str(skeleton),
         "--output_dir", str(skin_npz), "--force_override", "true",

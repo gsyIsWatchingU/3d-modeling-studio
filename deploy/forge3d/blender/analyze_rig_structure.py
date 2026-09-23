@@ -20,6 +20,16 @@ REQUIRED = {
 }
 
 
+def functional_length(semantic_bones: dict[str, bpy.types.Bone], name: str, side: str) -> float:
+    """按可动链比较长度，避免把 UniRig 的手指分段差异误判成手臂不对称。"""
+
+    if name != "hand":
+        bone = semantic_bones.get(f"{name}_{side}")
+        return bone.length if bone is not None else 0.0
+    names = [f"hand_{side}", *(f"index_0{index}_{side}" for index in range(1, 4))]
+    return sum(semantic_bones[key].length for key in names if key in semantic_bones)
+
+
 def parse_args() -> argparse.Namespace:
     args = sys.argv[sys.argv.index("--") + 1 :]
     parser = argparse.ArgumentParser()
@@ -49,6 +59,7 @@ def main() -> None:
     bones = armature.data.bones
     raw_mapping = semantic_mapping(armature)
     semantic_bones = {semantic: bones[original] for original, semantic in raw_mapping.items()}
+    semantic_names = {semantic: original for original, semantic in raw_mapping.items()}
     points = [point for bone in bones for point in (bone.head_local, bone.tail_local)]
     height = max(max(point.z for point in points) - min(point.z for point in points), 1e-6)
     missing = sorted(REQUIRED - set(semantic_bones))
@@ -69,12 +80,28 @@ def main() -> None:
             pair_mirror.append(abs(left_point.x + right_point.x) / height)
             pair_depth.append(abs(left_point.y - right_point.y) / height)
             pair_height.append(abs(left_point.z - right_point.z) / height)
-        length_mismatch = abs(left.length - right.length) / max(left.length, right.length, 1e-6)
+        left_functional_length = functional_length(semantic_bones, name, "l")
+        right_functional_length = functional_length(semantic_bones, name, "r")
+        length_mismatch = abs(left_functional_length - right_functional_length) / max(
+            left_functional_length, right_functional_length, 1e-6
+        )
         mirror_x_errors.extend(pair_mirror)
         depth_errors.extend(pair_depth)
         height_errors.extend(pair_height)
         length_mismatches.append(length_mismatch)
         pair_details[name] = {
+            "left_bone": semantic_names[f"{name}_l"],
+            "right_bone": semantic_names[f"{name}_r"],
+            "left_head": [round(value, 5) for value in left.head_local],
+            "left_tail": [round(value, 5) for value in left.tail_local],
+            "right_head": [round(value, 5) for value in right.head_local],
+            "right_tail": [round(value, 5) for value in right.tail_local],
+            "left_length": round(left.length, 5),
+            "right_length": round(right.length, 5),
+            "left_functional_length": round(left_functional_length, 5),
+            "right_functional_length": round(right_functional_length, 5),
+            "left_children": [child.name for child in left.children],
+            "right_children": [child.name for child in right.children],
             "mirror_x_error_ratio": round(max(pair_mirror), 5),
             "depth_error_ratio": round(max(pair_depth), 5),
             "height_error_ratio": round(max(pair_height), 5),
@@ -90,6 +117,26 @@ def main() -> None:
     report = {
         "asset": str(source),
         "bone_count": len(bones),
+        "semantic_bones": {
+            semantic: {
+                "source": original,
+                "head": [round(value, 5) for value in bones[original].head_local],
+                "tail": [round(value, 5) for value in bones[original].tail_local],
+                "length": round(bones[original].length, 5),
+            }
+            for original, semantic in sorted(raw_mapping.items(), key=lambda item: item[1])
+        },
+        "unmapped_bones": [
+            {
+                "name": bone.name,
+                "parent": bone.parent.name if bone.parent else None,
+                "head": [round(value, 5) for value in bone.head_local],
+                "tail": [round(value, 5) for value in bone.tail_local],
+                "length": round(bone.length, 5),
+            }
+            for bone in bones
+            if bone.name not in raw_mapping
+        ],
         "missing_required_bones": missing,
         "pair_details": pair_details,
         "quality": {
