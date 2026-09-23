@@ -31,6 +31,17 @@ profiles:
         max_knee_bend_degrees: 95
         max_foot_lateral_ratio: 0.38
         max_knee_lateral_deviation_ratio: 0.08
+      rig_quality:
+        max_mirror_x_error_ratio: 0.02
+        max_pair_depth_error_ratio: 0.02
+        max_pair_height_error_ratio: 0.015
+        max_bone_length_mismatch_ratio: 0.10
+        max_rest_foot_lateral_ratio: 0.20
+      deformation_quality:
+        max_depth_to_height: 0.50
+        max_p99_edge_stretch_ratio: 2.30
+        max_edge_stretch_ratio: 20.0
+        max_stretched_edge_ratio: 0.015
     audio:
       sample_rate: 48000
       target_lufs: -16
@@ -84,6 +95,17 @@ profiles:
         max_knee_bend_degrees: 95
         max_foot_lateral_ratio: 0.38
         max_knee_lateral_deviation_ratio: 0.08
+      rig_quality:
+        max_mirror_x_error_ratio: 0.02
+        max_pair_depth_error_ratio: 0.02
+        max_pair_height_error_ratio: 0.015
+        max_bone_length_mismatch_ratio: 0.10
+        max_rest_foot_lateral_ratio: 0.20
+      deformation_quality:
+        max_depth_to_height: 0.50
+        max_p99_edge_stretch_ratio: 2.30
+        max_edge_stretch_ratio: 20.0
+        max_stretched_edge_ratio: 0.015
     audio:
       sample_rate: 48000
       target_lufs: -18

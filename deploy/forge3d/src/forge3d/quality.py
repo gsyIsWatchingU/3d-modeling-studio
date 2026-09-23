@@ -3,6 +3,45 @@ from __future__ import annotations
 from typing import Any
 
 
+def collect_rig_quality_violations(report: dict[str, Any], profile: dict[str, Any]) -> list[str]:
+    quality = report.get("quality", {})
+    limits = profile.get("animation", {}).get("rig_quality", {})
+    violations: list[str] = []
+    if report.get("missing_required_bones"):
+        violations.append("missing_humanoid_bones")
+    checks = (
+        ("max_mirror_x_error_ratio", "max_mirror_x_error_ratio", 0.02, "rig_mirror_asymmetry"),
+        ("max_pair_depth_error_ratio", "max_pair_depth_error_ratio", 0.02, "rig_depth_asymmetry"),
+        ("max_pair_height_error_ratio", "max_pair_height_error_ratio", 0.015, "rig_height_asymmetry"),
+        ("max_bone_length_mismatch_ratio", "max_bone_length_mismatch_ratio", 0.10, "rig_length_asymmetry"),
+        ("max_rest_foot_lateral_ratio", "max_rest_foot_lateral_ratio", 0.20, "rig_foot_lateral_twist"),
+    )
+    for metric, limit, fallback, code in checks:
+        if metric not in quality:
+            violations.append(f"{code}_metric_missing")
+        elif quality[metric] > limits.get(limit, fallback):
+            violations.append(code)
+    return violations
+
+
+def collect_deformation_violations(report: dict[str, Any], profile: dict[str, Any]) -> list[str]:
+    quality = report.get("quality", {})
+    limits = profile.get("animation", {}).get("deformation_quality", {})
+    violations: list[str] = []
+    checks = (
+        ("max_depth_to_height", "max_depth_to_height", 0.50, "deformation_depth_explosion"),
+        ("p99_edge_stretch_ratio", "max_p99_edge_stretch_ratio", 2.30, "deformation_edge_stretch"),
+        ("max_edge_stretch_ratio", "max_edge_stretch_ratio", 20.0, "deformation_extreme_edge_stretch"),
+        ("stretched_edge_ratio", "max_stretched_edge_ratio", 0.015, "deformation_stretched_area"),
+    )
+    for metric, limit, fallback, code in checks:
+        if metric not in quality:
+            violations.append(f"{code}_metric_missing")
+        elif quality[metric] > limits.get(limit, fallback):
+            violations.append(code)
+    return violations
+
+
 def collect_quality_violations(
     inspection: dict[str, Any],
     preview: dict[str, Any],

@@ -9,7 +9,11 @@ from pathlib import Path
 
 from forge3d.config import load_pipelines, load_profiles
 from forge3d.domain import AssetJob, JobState, StageResult, utc_now
-from forge3d.quality import collect_quality_violations
+from forge3d.quality import (
+    collect_deformation_violations,
+    collect_quality_violations,
+    collect_rig_quality_violations,
+)
 from forge3d.settings import Settings
 from forge3d.store import JobStore
 from forge3d.skill_options import apply_skill_options
@@ -197,15 +201,36 @@ class PipelineRunner:
         if self.settings.dry_run:
             shutil.copyfile(source, output)
         else:
+            rig_limits = self.profile(job).get("animation", {}).get("rig_quality", {})
             command = [
                 str(self.settings.project_root / "scripts" / "run-unirig.sh"),
                 str(source),
                 str(output),
+                json.dumps(rig_limits, separators=(",", ":")),
             ]
             self._run_command(command, job)
         self._require_output(output)
         job.outputs["rigged_mesh"] = str(output)
-        return {"backend": "unirig", "output": str(output)}
+        details = {"backend": "unirig", "output": str(output)}
+        if not self.settings.dry_run:
+            report_path = self.store.job_dir(job.job_id) / "rig-qc.json"
+            command = [
+                os.environ.get("FORGE3D_BLENDER", "/workspace/.tools/blender/blender"),
+                "--background", "--python-exit-code", "1", "--python",
+                str(self.settings.project_root / "blender" / "analyze_rig_structure.py"),
+                "--", "--input", str(output), "--output", str(report_path),
+            ]
+            self._run_command(command, job)
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            violations = collect_rig_quality_violations(report, self.profile(job))
+            job.outputs["rig_quality_report"] = str(report_path)
+            job.metrics["rig_quality"] = report.get("quality", {})
+            job.quality_gates["rig_structure_review"] = "failed" if violations else "passed"
+            self.store.save(job)
+            if violations:
+                raise PipelineError("骨架门禁失败: " + ", ".join(violations))
+            details["rig_quality"] = report.get("quality", {})
+        return details
 
     def stage_retarget_animation(self, job: AssetJob) -> dict:
         source = Path(job.outputs["rigged_mesh"])
@@ -233,7 +258,27 @@ class PipelineRunner:
             self._run_command(command, job)
         self._require_output(output)
         job.outputs["animated_source"] = str(output)
-        return {"output": str(output)}
+        details = {"output": str(output)}
+        if not self.settings.dry_run:
+            report_path = self.store.job_dir(job.job_id) / "deformation-qc.json"
+            command = [
+                os.environ.get("FORGE3D_BLENDER", "/workspace/.tools/blender/blender"),
+                "--background", "--python-exit-code", "1", "--python",
+                str(self.settings.project_root / "blender" / "analyze_deformation.py"),
+                "--", "--input", str(output), "--output", str(report_path),
+                "--action", "walk_loop", "--samples", "12",
+            ]
+            self._run_command(command, job)
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            violations = collect_deformation_violations(report, self.profile(job))
+            job.outputs["deformation_quality_report"] = str(report_path)
+            job.metrics["deformation_quality"] = report.get("quality", {})
+            job.quality_gates["deformation_review"] = "failed" if violations else "passed"
+            self.store.save(job)
+            if violations:
+                raise PipelineError("蒙皮变形门禁失败: " + ", ".join(violations))
+            details["deformation_quality"] = report.get("quality", {})
+        return details
 
     def stage_export(self, job: AssetJob) -> dict:
         source_key = "animated_source" if job.asset_kind.value == "character" else "normalized_mesh"
