@@ -172,6 +172,23 @@ function addImages(fileList) {
     updateGenerateState();
 }
 
+async function importTransferredReferences() {
+    const raw = sessionStorage.getItem('modeling-reference-transfer');
+    if (!raw) return;
+    sessionStorage.removeItem('modeling-reference-transfer');
+    let transfer;
+    try { transfer = JSON.parse(raw); } catch { return; }
+    if (!transfer?.images?.length || transfer.plan_id !== new URLSearchParams(location.search).get('plan')) return;
+    const files = [];
+    for (const image of transfer.images.slice(0, 6)) {
+        const response = await fetch(image.url); if (!response.ok) throw new Error('项目预览图读取失败');
+        const blob = await response.blob(); files.push(new File([blob], image.name || 'project-preview.png', { type: blob.type, lastModified: Date.now() }));
+    }
+    addImages(files);
+    if (!document.getElementById('modelNameInput').value) document.getElementById('modelNameInput').value = `${transfer.project_name || '游戏项目'} 资产`;
+    showToast(`已带入 ${files.length} 张已批准预览图`);
+}
+
 function renderImages() {
     const grid = document.getElementById('imageGrid');
     grid.replaceChildren();
@@ -711,6 +728,7 @@ async function init() {
     try {
         await reloadBootstrap();
         await loadProductionPlans(new URLSearchParams(location.search).get('plan') || '');
+        await importTransferredReferences();
         await loadJobs();
     } catch (error) {
         showToast(`初始化失败：${error.message}`, true);

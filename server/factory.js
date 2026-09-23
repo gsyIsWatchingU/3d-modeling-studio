@@ -102,7 +102,12 @@ function createFactoryRouter() {
             const plan = productionPlanDb.create({ name: p.name, brief: p.brief.slice(0, 2000), profile: 'xhs_mobile', catalog_version: p.catalog_version, status: 'planned', stages: p.guides }, req.user.id);
             factoryDb.change(p.id, req.user.id, q => { q.production_plan_id = plan.id; }); p.production_plan_id = plan.id;
         }
-        ok(res, { production_plan_id: p.production_plan_id, url: `/modeling.html?plan=${p.production_plan_id}` });
+        const concept = (p.stage_runs || []).filter(run => run.stage_id === 'concept' && run.review?.status === 'approved').at(-1);
+        const preview_files = (concept?.artifacts || []).filter(item => item.type === 'image').map(item => ({
+            url: `/api/factory/projects/${p.id}/stage-runs/${concept.id}/files/${item.path}`,
+            name: item.original_name || path.basename(item.path), sha256: item.sha256
+        }));
+        ok(res, { production_plan_id: p.production_plan_id, url: `/modeling.html?plan=${p.production_plan_id}`, preview_files });
     }));
     router.post('/projects/:id/workflow-stages/modeling/review', requireUser, action((req, res) => {
         const p = projectFor(req);
@@ -201,6 +206,8 @@ function createFactoryRouter() {
             if (all.flatMap(p => p.runs).filter(r => ['queued', 'running'].includes(r.status)).length >= 6) throw new Error('当前生产队列已满，请稍后再试');
             if (all.filter(p => p.owner_id === req.user.id).flatMap(p => p.runs).filter(r => Date.now() - Date.parse(r.created_at) < 6 * 3600000).length >= 12) throw new Error('6 小时内最多生成 12 个版本');
             result = { ...data, channels: [...new Set(data.channels)], id: `F${crypto.randomUUID()}`, version: q.runs.length + 1, status: 'queued', stages: stages.map(([id, name]) => ({ id, name, status: 'pending' })), review: { status: 'pending' }, base_url: process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`, created_at: new Date().toISOString() };
+            result.stage_input_ids = (q.stage_runs || []).filter(stageRun => stageRun.review?.status === 'approved')
+                .filter((stageRun, index, list) => list.findLastIndex(item => item.stage_id === stageRun.stage_id) === index).map(stageRun => stageRun.id);
             q.runs.push(result);
         });
         ok(res, result, 202);

@@ -205,7 +205,11 @@ $('approve').onclick = () => act(() => review('approved'));
 $('reject').onclick = () => act(() => review('changes_requested'));
 $('publish').onclick = () => act(async () => { await api(`${base()}/publish`, { method: 'POST', body: '{}' }); await refresh(); toast('游戏已发布，链接无需登录即可游玩'); });
 $('unpublish').onclick = () => act(async () => { await api(`/projects/${active.id}/release`, { method: 'DELETE' }); await refresh(); toast('公开链接已关闭'); });
-$('modeling').onclick = () => act(async () => { const result = await api(`/projects/${active.id}/model-plan`, { method: 'POST', body: '{}' }); location.href = result.url; });
+$('modeling').onclick = () => act(async () => {
+    const result = await api(`/projects/${active.id}/model-plan`, { method: 'POST', body: '{}' });
+    if (result.preview_files?.length) sessionStorage.setItem('modeling-reference-transfer', JSON.stringify({ plan_id: result.production_plan_id, project_name: active.name, images: result.preview_files }));
+    location.href = result.url;
+});
 $('openModeling').onclick = $('modeling').onclick;
 $('startStage').onclick = () => act(async () => {
     const stage = capabilities.workflow_stages.find(item => item.id === stageId);
