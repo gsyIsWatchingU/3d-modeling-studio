@@ -27,7 +27,7 @@ bash tools/gpu-audio/install-runtime.sh sfx
 
 MOSS v2 官方公开权重无需账号或 Token，固定模型 revision，匿名下载。网络需要时，可用 HF_ENDPOINT=https://hf-mirror.com 下载这些公开、非门控权重；生成时只读本地缓存。旧 Stable Audio 环境保留但不再作为生成入口。依赖安装、权重缓存、CUDA 推理验证、人工试听是不同状态。`doctor` 不会伪称已试听或推理成功。
 
-新推理前检查 `nvidia-smi` 与 Forge3D 队列，选择空闲卡；不停止其他服务。工位使用串行锁，至少预留 12 GiB 显存并拒绝繁忙 GPU；它不能替代全服务器调度。
+新推理前检查 `nvidia-smi` 与 Forge3D 队列，选择空闲卡；不停止其他服务。工位使用串行锁，音效至少预留 20 GiB、配音至少预留 12 GiB 显存，并拒绝繁忙 GPU；它不能替代全服务器调度。
 
 ## 生产
 

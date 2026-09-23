@@ -36,11 +36,14 @@ def main():
     if not cached_model_ready(model_path, backend):
         raise RuntimeError('本地权重未准备完整；运行 prepare-model.py')
     torch.cuda.set_device(0)
+    torch.cuda.reset_peak_memory_stats(0)
     directory = Path(args.request).parent
+    component_devices = {}
     if backend == 'tts':
         model = Qwen3TTSModel.from_pretrained(model_path, device_map='cuda:0', dtype=torch.bfloat16, attn_implementation='sdpa')
         if str(model.device) != 'cuda:0':
             raise RuntimeError('TTS 模型未加载到 CUDA')
+        component_devices['tts'] = str(model.device)
     else:
         model = MossSoundEffectPipeline.from_pretrained(model_path, torch_dtype=torch.bfloat16, device='cuda:0')
         model.eval()
@@ -50,7 +53,11 @@ def main():
         def require_cuda(module, inputs):
             if next(module.parameters()).device.type != 'cuda':
                 raise RuntimeError('生成组件不在 CUDA')
-        for component in (model.transformer, model.text_encoder, model.vae):
+        for name, component in [('transformer', model.transformer), ('text_encoder', model.text_encoder), ('vae', model.vae)]:
+            devices = sorted({str(p.device) for p in component.parameters()})
+            if devices != ['cuda:0']:
+                raise RuntimeError(name + ' 的权重未全部放置于 CUDA')
+            component_devices[name] = devices[0]
             component.eval()
             component.register_forward_pre_hook(require_cuda)
     outputs = []
@@ -82,6 +89,7 @@ def main():
                         'source_peak': peak, 'source_rms': rms, 'gain_applied': attenuation, 'listening': 'unverified', 'loop': 'unverified'})
     files = [p for p in Path(model_path).rglob('*') if p.is_file() and p.suffix in ('.safetensors', '.json', '.bin', '.pth', '.txt')]
     evidence = {'device': 'cuda:0', 'gpu_name': torch.cuda.get_device_name(0), 'torch_version': torch.__version__,
+                'component_devices': component_devices, 'peak_gpu_memory_bytes': torch.cuda.max_memory_allocated(0),
                 'backend_version': importlib.metadata.version('qwen-tts' if backend == 'tts' else 'moss-soundeffect-v2'),
                 'model_revision': Path(model_path).name, 'model_files_sha256': {str(p.relative_to(model_path)): digest(p) for p in files}, 'outputs': outputs}
     write_json(directory / 'inference.json', evidence)

@@ -16,7 +16,7 @@ BACKENDS = {
             'model': 'Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice', 'license': 'Apache-2.0'},
     'sfx': {'python': '/workspace/.envs/game-audio-moss/bin/python', 'module': 'moss_soundeffect_v2',
             'model': 'OpenMOSS-Team/MOSS-SoundEffect-v2.0', 'license': 'Apache-2.0',
-            'revision': 'e35df4d82fbe87fcd5d14e5d100e349c0c3c076d'},
+            'revision': 'e35df4d82fbe87fcd5d14e5d100e349c0c3c076d', 'min_free_mib': 20480},
 }
 SFX_FILES = ['model_index.json', 'scheduler/scheduler_config.json', 'transformer/config.json',
              'transformer/diffusion_pytorch_model.safetensors', 'text_encoder/config.json',
@@ -135,8 +135,9 @@ def generate(request, output_root, gpu):
         env['CUDA_VISIBLE_DEVICES'] = str(gpu)
         raw = subprocess.check_output(['nvidia-smi', '-i', str(gpu), '--query-gpu=memory.free,utilization.gpu', '--format=csv,noheader,nounits'], text=True)
         free, usage = map(int, raw.strip().split(','))
-        if free < 12000 or usage > 20:
-            raise RuntimeError('GPU 空闲显存不足 12 GiB 或正在忙碌；请等待，不停止其他服务')
+        required_free = cfg.get('min_free_mib', 12288)
+        if free < required_free or usage > 20:
+            raise RuntimeError(f'GPU 空闲显存不足 {required_free // 1024} GiB 或正在忙碌；请等待，不停止其他服务')
         manifest = {'job_id': job_id, 'status': 'running', 'review': 'pending', 'request': request,
                     'host': socket.gethostname(), 'gpu_index': gpu, 'model': cfg['model'], 'license': cfg['license'],
                     'pipeline_sha256': snapshot, 'started_at': time.time(), 'outputs': []}

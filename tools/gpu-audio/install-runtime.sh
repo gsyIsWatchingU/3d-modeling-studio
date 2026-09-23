@@ -24,7 +24,17 @@ else
     'https://download.pytorch.org/whl/cu126/torch-2.9.0%2Bcu126-cp312-cp312-manylinux_2_28_x86_64.whl' \
     'https://download.pytorch.org/whl/cu126/torchaudio-2.9.0%2Bcu126-cp312-cp312-manylinux_2_28_x86_64.whl' \
     'https://download.pytorch.org/whl/cu126/torchvision-0.24.0%2Bcu126-cp312-cp312-manylinux_2_28_x86_64.whl'
-  "$BOOTSTRAP/bin/uv" pip install --python "$VENV/bin/python" 'https://codeload.github.com/OpenMOSS/MOSS-TTS/zip/934d6826b084c46a0d033402174d5f8ac4ed2519#subdirectory=moss_soundeffect_v2'
+  SOURCE_ROOT=/workspace/models/game-audio/source
+  COMMIT=934d6826b084c46a0d033402174d5f8ac4ed2519
+  ARCHIVE="$SOURCE_ROOT/moss-$COMMIT.zip"
+  mkdir -p "$SOURCE_ROOT"
+  if [ ! -f "$ARCHIVE" ]; then
+    curl -fL --retry 3 --max-time 180 "https://codeload.github.com/OpenMOSS/MOSS-TTS/zip/$COMMIT" -o "$ARCHIVE.part"
+    mv "$ARCHIVE.part" "$ARCHIVE"
+  fi
+  printf '%s  %s\n' a0d3c10d24161eb7283dc5d88c10a164ca42c0e8d21e943a126403c18a598f09 "$ARCHIVE" | sha256sum -c -
+  "$PYTHON" -m zipfile -e "$ARCHIVE" "$SOURCE_ROOT"
+  "$BOOTSTRAP/bin/uv" pip install --python "$VENV/bin/python" "$SOURCE_ROOT/MOSS-TTS-$COMMIT/moss_soundeffect_v2"
   "$BOOTSTRAP/bin/uv" pip check --python "$VENV/bin/python"
 fi
 echo '运行环境已安装；下一步 prepare-model.py，再执行 doctor 与试生成。'

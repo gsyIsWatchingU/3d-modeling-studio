@@ -46,6 +46,13 @@ class AudioFactoryTest(unittest.TestCase):
             run.assert_not_called()
 
     @unittest.skipUnless(sys.platform == 'linux', '服务器内核锁仅在 Linux 验证')
+    def test_sfx_reserves_headroom_for_verified_model_peak(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(factory.BACKENDS, {'sfx': dict(factory.BACKENDS['sfx'], python=sys.executable)}), patch('subprocess.check_output', return_value='18000, 0'), patch('subprocess.run') as run:
+            with self.assertRaisesRegex(RuntimeError, '20 GiB'):
+                factory.generate(self.request(), tmp, 0)
+            run.assert_not_called()
+
+    @unittest.skipUnless(sys.platform == 'linux', '服务器内核锁仅在 Linux 验证')
     def test_valid_cache_reused_but_tampered_output_regenerated(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(factory.BACKENDS, {'sfx': dict(factory.BACKENDS['sfx'], python=sys.executable)}), patch('subprocess.check_output', return_value='44000, 0'):
             def infer(argv, **kwargs):
