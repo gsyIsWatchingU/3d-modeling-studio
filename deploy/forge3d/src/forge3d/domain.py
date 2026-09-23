@@ -45,6 +45,8 @@ class AssetJob(BaseModel):
     state: JobState = JobState.queued
     source_file: str
     source_sha256: str
+    material_source_file: str | None = None
+    material_source_sha256: str | None = None
     prompt: str = ""
     seed: int = 1234
     created_at: str = Field(default_factory=utc_now)

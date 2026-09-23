@@ -140,7 +140,7 @@ class PipelineRunner:
             command = [
                 str(self.settings.project_root / "scripts" / "run-hunyuan-paint.sh"),
                 str(source),
-                job.source_file,
+                job.material_source_file or job.source_file,
                 str(output),
                 str(paint_policy.get("views", 8)),
                 str(paint_policy.get("resolution", 768)),
@@ -160,6 +160,7 @@ class PipelineRunner:
             "output": str(output),
             "preserved_mesh": bool(job.skill_plan),
             "material_prompt": job.skill_plan.get("material_prompt", "high quality"),
+            "material_source": job.material_source_file or job.source_file,
         }
 
     def stage_normalize_mesh(self, job: AssetJob) -> dict:

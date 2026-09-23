@@ -4,6 +4,7 @@
 
 - `src/forge3d/skill_options.py`：参数白名单、范围校验、独立档位副本。
 - `api.py` / `domain.py`：接收并持久化执行计划、返回摘要回执。
+- `material_source`：角色可单独上传材质/身份参考图，形体用标准 A-pose，贴图继续沿用锁定原画。
 - `pipeline.py`：面数、纹理、Paint 参数和质量检查均使用任务自己的档位。
 - `scripts/hunyuan_generate.py`：正确传入种子 Generator。
 - `scripts/hunyuan_paint.py`、`material_prompt.py`、`run-hunyuan-paint.sh`：材质文本进入扩散推理，工作室任务跳过上游固定 4 万面的重复减面。

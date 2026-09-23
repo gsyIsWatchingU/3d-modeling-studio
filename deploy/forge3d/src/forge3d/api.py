@@ -74,6 +74,7 @@ def list_profiles() -> dict:
 @app.post("/v1/jobs", response_model=AssetJob)
 async def create_job(
     source: UploadFile = File(...),
+    material_source: UploadFile | None = File(None),
     asset_name: str = Form(..., min_length=2, max_length=80),
     asset_kind: AssetKind = Form(...),
     profile: str = Form("xhs_mobile"),
@@ -93,6 +94,9 @@ async def create_job(
     suffix = Path(source.filename or "").suffix.lower()
     if suffix not in ALLOWED_EXTENSIONS[asset_kind]:
         raise HTTPException(415, f"{asset_kind.value} 不支持文件类型 {suffix}")
+    material_suffix = Path(material_source.filename or "").suffix.lower() if material_source else ""
+    if material_source and material_suffix not in ALLOWED_EXTENSIONS[asset_kind]:
+        raise HTTPException(415, f"{asset_kind.value} 不支持材质参考文件类型 {material_suffix}")
 
     job_id = uuid4().hex
     job_dir = settings.jobs_root / job_id
@@ -110,6 +114,23 @@ async def create_job(
             digest.update(chunk)
             output.write(chunk)
 
+    material_source_path = None
+    material_digest = None
+    if material_source:
+        material_source_path = job_dir / f"material-source{material_suffix}"
+        material_hasher = hashlib.sha256()
+        material_size = 0
+        with material_source_path.open("wb") as output:
+            while chunk := await material_source.read(1024 * 1024):
+                material_size += len(chunk)
+                if material_size > settings.max_upload_mb * 1024 * 1024:
+                    output.close()
+                    shutil.rmtree(job_dir)
+                    raise HTTPException(413, "材质参考文件过大")
+                material_hasher.update(chunk)
+                output.write(chunk)
+        material_digest = material_hasher.hexdigest()
+
     stages = [StageResult(name=name) for name in pipelines[asset_kind.value]]
     queue_name = settings.queue_for_asset_kind(asset_kind.value)
     job = AssetJob(
@@ -119,12 +140,15 @@ async def create_job(
         profile=profile,
         source_file=str(source_path),
         source_sha256=digest.hexdigest(),
+        material_source_file=str(material_source_path) if material_source_path else None,
+        material_source_sha256=material_digest,
         prompt=prompt,
         seed=seed,
         skill_plan=execution_plan,
         stages=stages,
         provenance={
             "source_filename": source.filename,
+            "material_source_filename": material_source.filename if material_source else None,
             "forge3d_version": __version__,
             "resource_class": settings.resource_class_for(asset_kind.value),
             "queue_name": queue_name,
