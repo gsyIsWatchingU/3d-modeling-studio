@@ -92,6 +92,19 @@ function runFactory(args, options) {
     });
 }
 
+async function runFactoryWhenAvailable(args, options, signal) {
+    const retries = Math.max(0, Math.min(6, Number.parseInt(process.env.FACTORY_GPU_AUDIO_BUSY_RETRIES || '2', 10) || 0));
+    const delayMs = Math.max(1000, Math.min(60000, Number.parseInt(process.env.FACTORY_GPU_AUDIO_BUSY_RETRY_MS || '10000', 10) || 10000));
+    for (let attempt = 0; ; attempt++) {
+        try { return await runFactory(args, options); }
+        catch (error) {
+            const resourceBusy = /音频工位正在生产|GPU 空闲显存不足/.test(error.message);
+            if (!resourceBusy || attempt >= retries || signal?.aborted) throw error;
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+    }
+}
+
 async function generateGpuSfx(project, spec, dir, signal) {
     const outputRoot = path.resolve(process.env.FACTORY_GPU_AUDIO_ROOT || '/workspace/3d-assets/game-audio');
     const requestRoot = path.resolve(process.env.FACTORY_GPU_AUDIO_REQUEST_DIR || path.join(path.dirname(process.env.DB_PATH || path.join(root, 'data', 'db.json')), 'gpu-audio-requests'));
@@ -108,7 +121,7 @@ async function generateGpuSfx(project, spec, dir, signal) {
         const requestFile = path.join(requestRoot, `${projectAudioId(project.id)}-${item.id}-${crypto.randomUUID()}.json`);
         try {
             atomicFile(requestFile, JSON.stringify(item.request, null, 2));
-            const manifest = await runFactory([script, 'generate', '--request', requestFile, '--output-root', outputRoot, '--gpu', gpu, '--wait-lock', String(lockWait)], { python, timeout });
+            const manifest = await runFactoryWhenAvailable([script, 'generate', '--request', requestFile, '--output-root', outputRoot, '--gpu', gpu, '--wait-lock', String(lockWait)], { python, timeout }, signal);
             generated.push({ id: item.id, manifest, manifestPath: manifest.manifest });
         } finally { try { fs.unlinkSync(requestFile); } catch {} }
     }
