@@ -14,14 +14,14 @@ const { createSkillSnapshot } = require('../server/utils');
 test('音频规范携带 GPU 操作正文与固定上游来源，不将安装误报为推理成功', () => {
     const guide = getGuide('audio');
     const skill = guide.snapshot.entries.find(entry => entry.id === 'production-audio');
-    assert.equal(skill.version, 4);
+    assert.equal(skill.version, 5);
     assert.match(skill.content, /audio_factory\.py doctor/);
     assert.match(skill.content, /不代表模型可用/);
     assert.ok(skill.sources.some(source => source.id === 'qwen3-tts-cli/SKILL.md' && source.license === 'Apache-2.0'));
     assert.ok(skill.sources.some(source => source.id === 'moss-soundeffect-v2/MODEL_CARD.md' && source.license === 'Apache-2.0'));
 });
 
-test('生产流可按依赖顺序执行，音频动画不误报已接入生成', () => {
+test('生产流按依赖顺序执行，并保留独立音频与动画规范', () => {
     const catalog = getCatalog();
     const visited = new Set();
     for (const stage of catalog.stages) {

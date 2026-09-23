@@ -114,7 +114,7 @@ def generate(request, output_root, gpu):
     if not Path(cfg['python']).is_file():
         raise RuntimeError('模型环境未安装，请运行对应 install-runtime.sh；不会回退到 CPU 或商业 API')
     # 把规范、代码和来源纳入任务身份，更新流水线后不会复用旧结果。
-    snapshot = {str(p.relative_to(ROOT)): digest(p) for p in [Path(__file__), Path(__file__).with_name('infer.py'), ROOT / 'production-skills/audio/SKILL.md', ROOT / 'production-skills/sources.lock.json']}
+    snapshot = {str(p.relative_to(ROOT)): digest(p) for p in [Path(__file__), Path(__file__).with_name('infer.py'), ROOT / 'production-skills/audio/SKILL.md', ROOT / 'production-skills/gpu-audio/SKILL.md', ROOT / 'production-skills/sources.lock.json']}
     identity = json.dumps({'request': request, 'pipeline': snapshot}, sort_keys=True, ensure_ascii=False).encode()
     job_id = hashlib.sha256(identity).hexdigest()[:24]
     directory = Path(output_root).resolve() / request['project_id'] / request['event_id'] / job_id
@@ -145,7 +145,8 @@ def generate(request, output_root, gpu):
         write_json(manifest_path, manifest)
         try:
             with (directory / 'generation.log').open('w', encoding='utf-8') as log:
-                subprocess.run([cfg['python'], str(Path(__file__).with_name('infer.py')), '--request', str(directory / 'request.json')], env=env, stdout=log, stderr=log, check=True, timeout=1800)
+                inference_timeout = max(60, min(1800, int(os.environ.get('GAME_AUDIO_INFERENCE_TIMEOUT', '300'))))
+                subprocess.run([cfg['python'], str(Path(__file__).with_name('infer.py')), '--request', str(directory / 'request.json')], env=env, stdout=log, stderr=log, check=True, timeout=inference_timeout)
             evidence = json.loads((directory / 'inference.json').read_text(encoding='utf-8'))
             if evidence['device'] != 'cuda:0' or not evidence['outputs']:
                 raise RuntimeError('缺少 CUDA 生成证据或产物')

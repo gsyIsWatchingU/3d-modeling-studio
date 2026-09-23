@@ -31,7 +31,7 @@ const specs = [
     ['environment', ['narrative'], 'model', 'GPU 场景资产建模已接入', ['布局、角色尺度、参考图、主路线'], ['场景模块 GLB、碰撞与镜头说明']],
     ['prop', ['design', 'narrative'], 'model', 'GPU 道具建模已接入', ['用途、尺寸、参考图、交互方式'], ['道具 GLB、枢轴与交互件说明']],
     ['animation', ['character'], 'specification', '工厂含 2D 运行时动画；3D 绑定仍需另行执行', ['角色模型、骨架、引擎与动作清单'], ['骨架、动作状态与事件规格；执行后交付动画']],
-    ['audio', ['narrative', 'environment'], 'specification', '已配置独立 GPU 音频 Skill 与命令入口；依赖、权重与推理状态须执行 doctor 核实，旧版 2D 产线仍为程序声音', ['声源、触发条件、时长、循环与情绪'], ['声音事件表、GPU 请求与来源记录；生成后交付待试听音频']],
+    ['audio', ['narrative', 'environment'], 'specification', '2D 完整生产可自动组装 GPU 事件音效；依赖、权重与推理状态须执行 doctor 核实，程序配乐另行标注', ['声源、触发条件、时长、循环与情绪'], ['声音事件表、GPU 请求与来源记录；生成后交付待试听音频']],
     ['integration', ['character', 'environment', 'prop', 'animation', 'audio'], 'external', '工厂可组装 2D 探索游戏；其他引擎另行执行', ['已验收资产、引擎和平台约束'], ['可玩切片、资产映射和性能记录']],
     ['qa', ['integration'], 'human', '需实际试玩和人工验收', ['可玩构建、目标设备、验收用例'], ['问题与复测证据、发布资产清单']]
 ];
@@ -44,7 +44,7 @@ const skills = Object.fromEntries(Object.keys(names).map(key => {
         if (!source) throw new Error(`缺少 Skill 来源：${id}`);
         return { id: source.id, url: source.url, commit: source.commit, sha256: source.sha256, license: source.license };
     });
-    return [key, { id: `production-${key}`, name: names[key], version: key === 'audio' ? 4 : key === 'integration' ? 2 : 1, content, sources, production: true }];
+    return [key, { id: `production-${key}`, name: names[key], version: key === 'audio' ? 5 : key === 'integration' ? 2 : 1, content, sources, production: true }];
 }));
 const catalogVersion = hash(JSON.stringify(skills));
 

@@ -44,7 +44,7 @@ test('游戏工厂：MCP生产、幂等、隔离、断点恢复、产物、审�
     const probe = http.createServer(); await new Promise(r => probe.listen(0, '127.0.0.1', r)); const port = probe.address().port; await new Promise(r => probe.close(r));
     const origin = `http://127.0.0.1:${port}`, mockOrigin = `http://127.0.0.1:${mock.address().port}`;
     let child, client;
-    const start = () => child = spawn(process.execPath, ['server/index.js'], { cwd: path.resolve(__dirname, '..'), stdio: 'ignore', env: { ...process.env, PORT: String(port), DB_PATH: db, UPLOAD_DIR: path.join(dir, 'uploads'), MODEL_DIR: path.join(dir, 'models'), FACTORY_PLANNER_URL: mockOrigin, PUBLIC_URL: origin } });
+    const start = () => child = spawn(process.execPath, ['server/index.js'], { cwd: path.resolve(__dirname, '..'), stdio: 'ignore', env: { ...process.env, FACTORY_GPU_SFX: '0', PORT: String(port), DB_PATH: db, UPLOAD_DIR: path.join(dir, 'uploads'), MODEL_DIR: path.join(dir, 'models'), FACTORY_PLANNER_URL: mockOrigin, PUBLIC_URL: origin } });
     const stop = async () => { if (child?.exitCode === null) { child.kill(); await once(child, 'exit'); } };
     t.after(async () => { if (client) await client.close(); await stop(); mock.closeAllConnections(); await new Promise(r => mock.close(r)); fs.rmSync(dir, { force: true, recursive: true }); });
     start(); await waitFor(async () => (await fetch(origin + '/api/health')).ok);

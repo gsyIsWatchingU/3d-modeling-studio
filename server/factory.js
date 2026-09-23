@@ -14,8 +14,9 @@ const { validateGame } = require('./factory-spec');
 const { detectImageType } = require('./utils');
 const { generatedStageIds, publicWorkflowStages, stageDefinition } = require('./stage-workflow');
 const { stageRunDir } = require('./stage-worker');
+const { gpuSfxEnabled } = require('./gpu-audio');
 const input = z.object({ name: z.string().trim().min(1).max(80), brief: z.string().trim().min(10).max(4000), style: z.string().trim().max(500).default('清晰、克制、色彩统一的矢量风格') });
-const allowedFiles = /^(index\.html|runtime\.js|game\.json|qa\.json|animation\.json|assets\/(player\.svg|npc\.svg|item\.svg|collect\.wav|danger\.wav|win\.wav|music\.wav)|docs\/(design\.md|narrative\.md|art\.md|audio\.md|skill-snapshot\.json))$/;
+const allowedFiles = /^(index\.html|runtime\.js|game\.json|qa\.json|animation\.json|assets\/(player\.svg|npc\.svg|item\.svg|collect\.wav|danger\.wav|win\.wav|music\.wav)|docs\/(design\.md|narrative\.md|art\.md|audio\.md|audio-source\.json|skill-snapshot\.json))$/;
 function summary(project) {
     const { guides, owner_id, ...rest } = project;
     return { ...rest, stage_runs: project.stage_runs || [], runs: project.runs.map(r => ({ ...r, notifications: notificationDb.listForJob(r.id).map(({ channel, status, last_error }) => ({ channel, status, last_error })) })) };
@@ -82,9 +83,9 @@ function createFactoryRouter() {
     const ok = (res, data, code = 200) => res.status(code).json({ success: true, data });
     router.get('/capabilities', (req, res) => ok(res, { engine: 'browser-exploration-v1', delivery: '离线浏览器探索游戏', stages: stages.map(([id, name]) => ({ id, name })),
         workflow_stages: publicWorkflowStages(),
-        supported: ['AI 策划、剧本、对白与关卡数据', '矢量角色、场景、道具', '程序合成音效与循环配乐', '移动、碰撞、危险物、收集与对话', '多关卡、暂停、失败重试、触屏操作', '在线试玩、版本迭代、ZIP 工程与公开分享', '独立 GPU 3D 建模资产库'],
-        audio_workflow: { mode: 'external-gpu-cli', guide: 'audio', backends: ['moss-soundeffect-v2.0', 'qwen3-tts-1.7b'], readiness: 'run-doctor-on-gpu-host', automatic_game_integration: false },
-        unavailable: ['任意游戏类型或 3D 玩法自动组装', '扩散模型原画（现有脚本缺失）', 'GPU 音频自动组装进 2D 产线', '联网对战、支付、商店上架'], notifications: getChannelStatus(req.user.id) }));
+        supported: ['AI 策划、剧本、对白与关卡数据', '矢量角色、场景、道具', gpuSfxEnabled() ? 'GPU 事件音效与程序循环配乐' : '程序合成音效与循环配乐', '移动、碰撞、危险物、收集与对话', '多关卡、暂停、失败重试、触屏操作', '在线试玩、版本迭代、ZIP 工程与公开分享', '独立 GPU 3D 建模资产库'],
+        audio_workflow: { mode: gpuSfxEnabled() ? 'automatic-gpu-sfx' : 'external-gpu-cli', guide: 'audio', backends: ['moss-soundeffect-v2.0', 'qwen3-tts-1.7b'], readiness: 'run-doctor-on-gpu-host', automatic_game_integration: gpuSfxEnabled() },
+        unavailable: ['任意游戏类型或 3D 玩法自动组装', '扩散模型原画（现有脚本缺失）', '联网对战、支付、商店上架'], notifications: getChannelStatus(req.user.id) }));
     router.get('/projects', (req, res) => ok(res, factoryDb.list(req.user.id).map(summary)));
     router.post('/projects', action((req, res) => {
         const data = input.parse(req.body);

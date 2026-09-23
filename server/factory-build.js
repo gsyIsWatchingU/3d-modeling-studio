@@ -38,9 +38,10 @@ function gameHtml(spec) {
 <main><header><h1 id="title"></h1><div><button id="sound">声音：开</button> <button id="pause">暂停</button></div></header><p id="goal"></p><p id="status" role="status"></p><div class="stage"><canvas id="game" tabindex="0" aria-label="探索游戏，方向键移动，E对话"></canvas><div id="overlay"><div class="card"><h2 id="heading"></h2><p id="description"></p><div id="actions"></div></div></div></div><div class="controls"><button data-key="ArrowLeft" aria-label="向左">←</button><button data-key="ArrowUp" aria-label="向上">↑</button><button data-key="ArrowDown" aria-label="向下">↓</button><button data-key="ArrowRight" aria-label="向右">→</button><button id="interact">对话 E</button></div><p id="message"></p></main><script>window.GAME_SPEC=${json};</script><script src="runtime.js"></script></html>`;
 }
 function writeArt(dir, spec) { for (const [name, svg] of Object.entries(artwork(spec))) atomicFile(path.join(dir, 'assets', name), svg); }
-function writeAudio(dir, spec) {
+function writeAudio(dir, spec, options = {}) {
     const a = spec.audio;
-    for (const [name, freqs, duration] of [['collect', [a.collect_hz, a.collect_hz * 1.5], .22], ['danger', [a.danger_hz, a.danger_hz * .7], .35], ['win', [a.win_hz, a.win_hz * 1.25, a.win_hz * 1.5], .7], ['music', [220, 261.63, 329.63, 293.66, 220, 293.66, 329.63, 261.63], 8]]) atomicFile(path.join(dir, 'assets', `${name}.wav`), wav(freqs, duration));
+    const tracks = [['collect', [a.collect_hz, a.collect_hz * 1.5], .22], ['danger', [a.danger_hz, a.danger_hz * .7], .35], ['win', [a.win_hz, a.win_hz * 1.25, a.win_hz * 1.5], .7], ['music', [220, 261.63, 329.63, 293.66, 220, 293.66, 329.63, 261.63], 8]];
+    for (const [name, freqs, duration] of tracks.filter(([name]) => options.effects !== false || name === 'music')) atomicFile(path.join(dir, 'assets', `${name}.wav`), wav(freqs, duration));
 }
 function buildGame(dir, spec) {
     validateGame(spec);
@@ -71,9 +72,10 @@ function exportZip(dir, project, run) {
     const files = inventory(dir), contents = {};
     for (const file of files) contents[file.path] = fs.readFileSync(path.join(dir, file.path));
     contents['rebuild.cjs'] = Buffer.from(`const fs = require('node:fs');\nconst spec = JSON.parse(fs.readFileSync('game.json', 'utf8'));\nconst json = JSON.stringify(spec).replace(/</g, '\\\\u003c');\nconst html = fs.readFileSync('index.html', 'utf8').replace(/window\\.GAME_SPEC=[\\s\\S]*?;<\\/script>/, () => 'window.GAME_SPEC=' + json + ';</script>');\nfs.writeFileSync('index.html', html);\nconsole.log('已将 game.json 更新到 index.html');\n`);
-    contents['README.md'] = Buffer.from(`# ${project.name}\n\n解压后双击 index.html 即可离线游玩。上传全部文件到静态托管可发布。\n\n- 方向键/WASD 移动，E 对话，Esc 暂停；支持触屏按钮。\n- game.json 是可编辑数据；修改后须同步 index.html 的 GAME_SPEC 数据。runtime.js 是完整引擎源代码。\n- docs/ 保存策划、剧本、角色场景与制作规范来源。assets/ 为矢量素材和程序合成 WAV。\n- 此版本：${run.id}；审核：${run.review?.status || 'pending'}。自动校验不代表人工试玩通过。\n- 内置素材由本平台程序生成，不包含第三方素材；模型生成的故事与设计仍需自行审查权利及质量。\n- 引擎支持俯视探索收集、危险物、NPC 对话、多关卡；不含联网、3D 战斗或真人配音。\n`);
+    const audioSource = run.audio?.mode === 'gpu-sfx' ? '事件音效由自有 GPU 的 MOSS-SoundEffect v2.0 生成，程序配乐保留原方案；声音仍需人工试听' : '声音为程序合成 WAV';
+    contents['README.md'] = Buffer.from(`# ${project.name}\n\n解压后双击 index.html 即可离线游玩。上传全部文件到静态托管可发布。\n\n- 方向键/WASD 移动，E 对话，Esc 暂停；支持触屏按钮。\n- game.json 是可编辑数据；修改后须同步 index.html 的 GAME_SPEC 数据。runtime.js 是完整引擎源代码。\n- docs/ 保存策划、剧本、角色场景与制作规范来源。assets/ 为矢量素材；${audioSource}。\n- 此版本：${run.id}；审核：${run.review?.status || 'pending'}。自动校验不代表人工试玩通过。\n- 内置素材与 GPU 产物不包含第三方商业生成 API；模型生成内容仍需自行审查权利及质量。\n- 引擎支持俯视探索收集、危险物、NPC 对话、多关卡；不含联网、3D 战斗或真人配音。\n`);
     contents['README.md'] = Buffer.from(contents['README.md'].toString().replace('修改后须同步 index.html 的 GAME_SPEC 数据', '修改后在工程目录运行 node rebuild.cjs 更新试玩页面（需 Node.js 20+）'));
-    contents['manifest.json'] = Buffer.from(JSON.stringify({ project_id: project.id, run_id: run.id, review: run.review, skill_version: project.catalog_version, files }, null, 2));
+    contents['manifest.json'] = Buffer.from(JSON.stringify({ project_id: project.id, run_id: run.id, review: run.review, audio: run.audio || null, skill_version: project.catalog_version, files }, null, 2));
     return Buffer.from(zipSync(contents, { level: 6 }));
 }
 module.exports = { atomicFile, writeArt, writeAudio, buildGame, audit, inventory, exportZip, digest };

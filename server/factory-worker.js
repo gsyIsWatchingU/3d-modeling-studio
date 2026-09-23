@@ -5,6 +5,7 @@ const { validateGame, schemaDescription } = require('./factory-spec');
 const { atomicFile, writeArt, writeAudio, buildGame, audit } = require('./factory-build');
 const { enqueueJobNotifications } = require('./notifier');
 const { stageRunDir } = require('./stage-worker');
+const { gpuSfxEnabled, generateGpuSfx } = require('./gpu-audio');
 const root = process.env.FACTORY_DIR || path.join(path.dirname(dbPath), 'game-factory');
 const stages = [
     ['design', '策划与玩法'], ['narrative', '剧本与分镜'], ['art', '角色、场景与道具'],
@@ -90,8 +91,16 @@ function startFactoryWorker() {
                     atomicFile(path.join(dir, 'docs', 'art.md'), `# 美术清单\n\n- 主角：${spec.player.name}，${spec.player.description}\n- 道具：${spec.collectible.name}，${spec.collectible.description}\n- 场景：${spec.levels.map(l => `${l.id} ${l.name}：${l.description}`).join('；')}\n- 实际来源：内置矢量模板与 AI 指定配色，场景由引擎按关卡数据绘制；不是扩散模型原画或 3D 模型。\n- player.svg、npc.svg、item.svg 可继续编辑；正式视觉质量待人工验收。`);
                 }
                 if (id === 'audio') {
-                    writeAudio(dir, spec);
-                    atomicFile(path.join(dir, 'docs', 'audio.md'), `# 声音事件\n\n${spec.audio.mood}\n\n- collect.wav：收集触发。\n- danger.wav：受伤触发。\n- win.wav：过关触发。\n- music.wav：8 秒程序音符循环，暂停时停止。\n\n实际来源：内置 PCM 合成器，22.05 kHz 单声道。不是文生音频模型，也不包含配音。事件已接入，混音和循环听感待试听。`);
+                    const useGpuSfx = gpuSfxEnabled();
+                    writeAudio(dir, spec, { effects: !useGpuSfx });
+                    const audio = useGpuSfx ? await generateGpuSfx(project, spec, dir, controller.signal) : {
+                        mode: 'procedural', generation_status: 'generated', technical_status: 'passed', review_status: 'pending'
+                    };
+                    atomicFile(path.join(dir, 'docs', 'audio-source.json'), JSON.stringify(audio, null, 2));
+                    atomicFile(path.join(dir, 'docs', 'audio.md'), useGpuSfx
+                        ? `# 声音事件\n\n${spec.audio.mood}\n\n- collect.wav：MOSS-SoundEffect v2.0，收集触发。\n- danger.wav：MOSS-SoundEffect v2.0，受伤触发。\n- win.wav：MOSS-SoundEffect v2.0，过关触发。\n- music.wav：8 秒程序音符循环，暂停时停止。\n\n三个事件音效已通过 CUDA 生成与文件技术检查，状态为待人工试听；背景配乐仍为程序生成。本版本只有在网页实际试玩并验收通过后才能公开发布。`
+                        : `# 声音事件\n\n${spec.audio.mood}\n\n- collect.wav：收集触发。\n- danger.wav：受伤触发。\n- win.wav：过关触发。\n- music.wav：8 秒程序音符循环，暂停时停止。\n\n实际来源：内置 PCM 合成器，22.05 kHz 单声道。不是文生音频模型，也不包含配音。事件已接入，混音和循环听感待试听。`);
+                    patch(r => { r.audio = audio; });
                 }
                 if (id === 'animation') atomicFile(path.join(dir, 'animation.json'), JSON.stringify({ source: 'builtin-runtime', player: { idle: '静止', walk: '正弦起伏', hit: '闪烁 2 秒' }, item: '悬浮', hazard: '沿路径巡逻', transitions: ['收集消失与音效', '受伤回出生点', '开门过关', '失败重试'] }, null, 2));
                 if (id === 'integration') buildGame(dir, spec);

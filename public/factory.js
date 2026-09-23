@@ -251,7 +251,6 @@ $('logout').onclick = async () => { await AUTH_API.logout(); location.replace('/
     try {
         const user = await AUTH_API.me(); if (!user) return location.replace('/login.html'); $('account').textContent = user.email;
         capabilities = await api('/capabilities'); $('notify').disabled = !capabilities.notifications.feishu.configured; $('notify').checked = capabilities.notifications.feishu.configured; $('notifyState').textContent = capabilities.notifications.feishu.configured ? '已配置' : '请先配置';
-        for (const [title, list] of [['已接入', capabilities.supported], ['尚未接入', capabilities.unavailable]]) { const h = document.createElement('h3'), ul = document.createElement('ul'); h.textContent = title; list.forEach(text => { const li = document.createElement('li'); li.textContent = text; ul.append(li); }); $('capabilityList').append(h, ul); }
         await refresh(); const id = new URLSearchParams(location.search).get('project'); if (id) await selectProject(id);
         setInterval(() => { if (!busy && !document.hidden) refresh().catch(e => toast(e.message, true)); }, 4000);
     } catch (e) { toast(e.message, true); }

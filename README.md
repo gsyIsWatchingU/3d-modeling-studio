@@ -1,6 +1,6 @@
 # 游戏生产工厂
 
-从游戏想法到浏览器可玩包：AI 策划与剧本、关卡、美术、声音、动画、试玩、版本迭代、工程下载和公开发布。当前完整产线面向 2D 俯视探索收集游戏，使用内置矢量素材与程序声音；能力与操作见[游戏工厂](docs/game-factory.md)。
+从游戏想法到浏览器可玩包：AI 策划与剧本、关卡、美术、声音、动画、试玩、版本迭代、工程下载和公开发布。当前完整产线面向 2D 俯视探索收集游戏，使用内置矢量素材、自有 GPU 事件音效与程序配乐；能力与操作见[游戏工厂](docs/game-factory.md)。
 
 首页同时提供引导式分阶段生产：策划、剧本和预览图制作单可独立异步生成并保留版本；实际预览图上传到后端后由用户审核，再关联 Forge3D 继续 3D 建模。缺少上游批准时允许独立起草，但会记录待衔接依赖；一键完整生产仍可继续使用。
 
@@ -54,6 +54,8 @@ SPU_PROVIDER=forge3d
 SPU_API_URL=http://127.0.0.1:8091/v1/jobs
 SPU_API_KEY=
 FORGE3D_ASSET_ROOT=/workspace/3d-assets
+FACTORY_GPU_SFX=1
+FACTORY_GPU_AUDIO_GPU=1
 
 NOTIFY_EMAIL_TO=
 SMTP_HOST=

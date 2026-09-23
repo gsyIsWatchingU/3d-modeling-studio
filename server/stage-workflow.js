@@ -17,7 +17,7 @@ const workflowStages = [
     },
     {
         id: 'animation_audio', name: '动画与声音', number: '05', action: 'full_production', capability: 'partial',
-        description: '完整生产含运行时动画和程序声音；骨骼动画与 GPU 音频仍需独立接入。', depends_on: ['modeling']
+        description: '完整生产含运行时动画与事件声音；3D 骨骼绑定仍需独立执行。', depends_on: ['modeling']
     },
     {
         id: 'integration', name: '游戏集成', number: '06', action: 'full_production', capability: 'connected',
