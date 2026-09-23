@@ -16,7 +16,13 @@
 | 交付 | 在线试玩、完整源码 ZIP、人工验收、可撤回的公开链接 |
 | 3D 工位 | 项目关联 Forge3D 建模；不自动进入当前 2D 引擎 |
 
-**尚未支持**任意游戏类型、3D 玩法自动组装、扩散原画、模型音乐/配音、联网对战与商店上架。程序素材不宣称为 GPU 扩散模型产物。
+**尚未支持**任意游戏类型、3D 玩法自动组装、扩散原画、GPU 音频自动组装进 2D 产线、联网对战与商店上架。程序素材不宣称为 GPU 扩散模型产物。
+
+## 独立 GPU 音频工位
+
+已配置 [GPU 音频 Skill](../production-skills/gpu-audio/SKILL.md) 与 `tools/gpu-audio/audio_factory.py`：Stable Audio 3 Medium 用于音效、环境声，Qwen3-TTS 用于中文对白。跨游戏复用同一入口，按项目和声音事件保存请求、母版、模型/代码/Skill 哈希与技术检查结果，不使用商业生成 API。
+
+服务端先运行 `python3 tools/gpu-audio/audio_factory.py doctor` 核实环境。Stable Audio 3 需要官方模型访问权限及 Flash Attention 2；Skill 已安装不代表权重已下载或推理已验证。生成结果统一待人工试听。旧版 2D 一键生产仍使用程序声音，GPU-only 项目须走独立音频工位并另行接入事件。
 
 ## 版本与账号
 

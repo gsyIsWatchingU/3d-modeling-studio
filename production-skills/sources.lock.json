@@ -117,6 +117,90 @@
       "url": "https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/game-development/narrative-designer.md",
       "license": "MIT",
       "sha256": "7a5489c7b0502aa167030018137e3f349d2c32505c0ad7b9ec1de066a9a93f0d"
+    },
+    {
+      "id": "qwen3-tts-cli/SKILL.md",
+      "repo": "takashi728/qwen3-tts-cli",
+      "commit": "8a41ba104ac296a9f5c62d96d111d823e24062b7",
+      "path": "vendor/qwen3-tts-cli/SKILL.md",
+      "url": "https://github.com/takashi728/qwen3-tts-cli/blob/8a41ba104ac296a9f5c62d96d111d823e24062b7/SKILL.md",
+      "license": "Apache-2.0",
+      "sha256": "d840e956c83209ec21730c8eb8b63d18905eb065adf3c189f0082207cf6b3ec2"
+    },
+    {
+      "id": "qwen3-tts-cli/LICENSE",
+      "repo": "takashi728/qwen3-tts-cli",
+      "commit": "8a41ba104ac296a9f5c62d96d111d823e24062b7",
+      "path": "vendor/qwen3-tts-cli/LICENSE",
+      "url": "https://github.com/takashi728/qwen3-tts-cli/blob/8a41ba104ac296a9f5c62d96d111d823e24062b7/LICENSE",
+      "license": "Apache-2.0",
+      "sha256": "a44a6081c73ad75f0255bb2bb5cab74ef1829565a895a24e53a4f11290ab7655"
+    },
+    {
+      "id": "qwen3-tts-cli/README.md",
+      "repo": "takashi728/qwen3-tts-cli",
+      "commit": "8a41ba104ac296a9f5c62d96d111d823e24062b7",
+      "path": "vendor/qwen3-tts-cli/README.md",
+      "url": "https://github.com/takashi728/qwen3-tts-cli/blob/8a41ba104ac296a9f5c62d96d111d823e24062b7/README.md",
+      "license": "Apache-2.0",
+      "sha256": "7627065429db0c53471a6f52a678377abf078aa844a599ca9608f97935e0f5c7"
+    },
+    {
+      "id": "qwen3-tts-cli/pyproject.toml",
+      "repo": "takashi728/qwen3-tts-cli",
+      "commit": "8a41ba104ac296a9f5c62d96d111d823e24062b7",
+      "path": "vendor/qwen3-tts-cli/pyproject.toml",
+      "url": "https://github.com/takashi728/qwen3-tts-cli/blob/8a41ba104ac296a9f5c62d96d111d823e24062b7/pyproject.toml",
+      "license": "Apache-2.0",
+      "sha256": "53aa2c53c93a4c9691e44585ec96a16fe2ef33563d090d26a7fc7144c73a59e1"
+    },
+    {
+      "id": "qwen3-tts-cli/qwen3_tts_cli/__init__.py",
+      "repo": "takashi728/qwen3-tts-cli",
+      "commit": "8a41ba104ac296a9f5c62d96d111d823e24062b7",
+      "path": "vendor/qwen3-tts-cli/qwen3_tts_cli/__init__.py",
+      "url": "https://github.com/takashi728/qwen3-tts-cli/blob/8a41ba104ac296a9f5c62d96d111d823e24062b7/qwen3_tts_cli/__init__.py",
+      "license": "Apache-2.0",
+      "sha256": "ed50eb6acb141c21dccc71d3383bba213d76c5494a35b48829d616ef14804d41"
+    },
+    {
+      "id": "qwen3-tts-cli/qwen3_tts_cli/main.py",
+      "repo": "takashi728/qwen3-tts-cli",
+      "commit": "8a41ba104ac296a9f5c62d96d111d823e24062b7",
+      "path": "vendor/qwen3-tts-cli/qwen3_tts_cli/main.py",
+      "url": "https://github.com/takashi728/qwen3-tts-cli/blob/8a41ba104ac296a9f5c62d96d111d823e24062b7/qwen3_tts_cli/main.py",
+      "license": "Apache-2.0",
+      "sha256": "4a9454cab2e4a70f89c0900dfc019cc174475b560e2e457dceb3de1140e50bd8"
+    },
+    {
+      "id": "stable-audio-3/README.md",
+      "repo": "Stability-AI/stable-audio-3",
+      "commit": "779434a908193105335fd8d833418603625b2859",
+      "path": "vendor/stable-audio-3/README.md",
+      "url": "https://github.com/Stability-AI/stable-audio-3/blob/779434a908193105335fd8d833418603625b2859/README.md",
+      "license": "MIT",
+      "sha256": "cacf79a450a15d69761ca9e05ee9a7ebe13319a62941a26d73e5c03d994c9d50",
+      "model_license": "Stability AI Community License"
+    },
+    {
+      "id": "stable-audio-3/LICENSE",
+      "repo": "Stability-AI/stable-audio-3",
+      "commit": "779434a908193105335fd8d833418603625b2859",
+      "path": "vendor/stable-audio-3/LICENSE",
+      "url": "https://github.com/Stability-AI/stable-audio-3/blob/779434a908193105335fd8d833418603625b2859/LICENSE",
+      "license": "MIT",
+      "sha256": "16bd922f0deee6f11a76f5582258fdc3abdf67c6b8719dbcafbc34dee31979a6",
+      "model_license": "Stability AI Community License"
+    },
+    {
+      "id": "stable-audio-3/docs/guides/prompting.md",
+      "repo": "Stability-AI/stable-audio-3",
+      "commit": "779434a908193105335fd8d833418603625b2859",
+      "path": "vendor/stable-audio-3/docs/guides/prompting.md",
+      "url": "https://github.com/Stability-AI/stable-audio-3/blob/779434a908193105335fd8d833418603625b2859/docs/guides/prompting.md",
+      "license": "MIT",
+      "sha256": "0337595171d3c24fa2b2e20deee6c8a69f5cdd1815d4e638a75f95fa42945f12",
+      "model_license": "Stability AI Community License"
     }
   ]
 }

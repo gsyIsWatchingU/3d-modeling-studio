@@ -15,7 +15,7 @@ description: 按固定规范编写游戏策划、剧本和分镜，设计角色�
 | 场景、关卡 | [建模](references/modeling/SKILL.md) + [场景](references/environment/SKILL.md) |
 | 道具 | [建模](references/modeling/SKILL.md) + [道具](references/prop/SKILL.md) |
 | 绑定、动画 | [动画](references/animation/SKILL.md) |
-| 音效、配音、配乐 | [声音](references/audio/SKILL.md) |
+| 音效、配音、配乐 | [声音](references/audio/SKILL.md) + [GPU 音频工位](references/gpu-audio/SKILL.md) |
 | UI、特效、引擎与性能 | [集成](references/integration/SKILL.md) |
 | 试玩、交付 | [验收](references/qa/SKILL.md) |
 

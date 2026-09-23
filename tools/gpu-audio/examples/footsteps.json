@@ -1,0 +1,10 @@
+{
+  "project_id": "bridge-after-rain",
+  "event_id": "footstep_wood_walk",
+  "backend": "sfx",
+  "prompt": "Close dry foley recording of a teenager in light canvas sneakers taking slow separate steps on weathered wooden bridge planks. Soft sole impacts, subtle wood creaks, quiet gaps between steps. No music, no speech, no background ambience, no reverb.",
+  "duration": 6,
+  "variants": 3,
+  "seed": 92301,
+  "loop": false
+}

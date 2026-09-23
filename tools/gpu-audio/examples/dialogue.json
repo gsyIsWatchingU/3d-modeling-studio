@@ -1,0 +1,10 @@
+{
+  "project_id": "bridge-after-rain",
+  "event_id": "boy_bridge_invitation",
+  "backend": "tts",
+  "text": "别怕，拉住我的手。我们一起过桥。",
+  "speaker": "Dylan",
+  "instruct": "少年自然轻声说话，温柔、坚定，句间稍作停顿，不要播音腔。",
+  "variants": 1,
+  "seed": 92301
+}
