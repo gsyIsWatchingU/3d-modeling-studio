@@ -9,5 +9,5 @@ from audio_factory import BACKENDS
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('backend', choices=BACKENDS)
 args = parser.parse_args()
-snapshot_download(BACKENDS[args.backend]['model'])
+snapshot_download(BACKENDS[args.backend]['model'], revision=BACKENDS[args.backend].get('revision'), token=False)
 print('权重已缓存；仍须 CUDA 试生成与人工试听。')

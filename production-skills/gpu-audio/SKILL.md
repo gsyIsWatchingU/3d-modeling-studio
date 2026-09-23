@@ -10,7 +10,7 @@ description: 通过自有 GPU 游戏工厂生产脚步、环境音、动作音�
 - 工厂仓库：`E:/prj-gsy/3d-modeling-studio`。
 - 远端：`ssh mygpu`，根目录 `/workspace/projects/3d-modeling-studio`，入口 `tools/gpu-audio/audio_factory.py`。
 - 素材只在自有服务器 CUDA 模型上生成。Codex 负责编排、代码和验收；不使用 Codex/ImageGen、豆包、ElevenLabs 等生成额度，也不退回 CPU/浏览器合成。
-- 脚步、雨声、木响等：Stable Audio 3 Medium；中文对白：Qwen3-TTS 1.7B CustomVoice。模型环境分别位于 `/workspace/.envs/game-audio-sfx` 与 `/workspace/.envs/game-audio-tts`。
+- 脚步、雨声、木响等：MOSS-SoundEffect v2.0；中文对白：Qwen3-TTS 1.7B CustomVoice。模型环境分别位于 `/workspace/.envs/game-audio-moss` 与 `/workspace/.envs/game-audio-tts`。
 - 固定来源在工厂 `production-skills/sources.lock.json`；上游 Skill 与许可证在 `production-skills/vendor`。执行上游代码前按锁定版本核验，不任意更新。
 
 ## 准备与检查
@@ -19,19 +19,19 @@ description: 通过自有 GPU 游戏工厂生产脚步、环境音、动作音�
 cd /workspace/projects/3d-modeling-studio
 python3 tools/gpu-audio/audio_factory.py doctor
 bash tools/gpu-audio/install-runtime.sh tts
-# 有访问权限及匹配的 Flash Attention 2 后准备 sfx 环境。
+# MOSS v2 使用独立 Python 3.12 环境，无需注册账号。
 bash tools/gpu-audio/install-runtime.sh sfx
 /workspace/.envs/game-audio-tts/bin/python tools/gpu-audio/prepare-model.py tts
-/workspace/.envs/game-audio-sfx/bin/python tools/gpu-audio/prepare-model.py sfx
+/workspace/.envs/game-audio-moss/bin/python tools/gpu-audio/prepare-model.py sfx
 ```
 
-Stable Audio 3 权重有访问门槛，用户须在官方模型页接受条款、配置服务器 HF 凭据。不得代填联系信息、打印 Token、使用镜像绕过授权或切到付费 API。依赖安装、权重缓存、CUDA 推理验证、人工试听是不同状态。`doctor` 不会伪称已试听或推理成功。
+MOSS v2 官方公开权重无需账号或 Token，固定模型 revision，匿名下载。网络需要时，可用 HF_ENDPOINT=https://hf-mirror.com 下载这些公开、非门控权重；生成时只读本地缓存。旧 Stable Audio 环境保留但不再作为生成入口。依赖安装、权重缓存、CUDA 推理验证、人工试听是不同状态。`doctor` 不会伪称已试听或推理成功。
 
 新推理前检查 `nvidia-smi` 与 Forge3D 队列，选择空闲卡；不停止其他服务。工位使用串行锁，至少预留 12 GiB 显存并拒绝繁忙 GPU；它不能替代全服务器调度。
 
 ## 生产
 
-为每个事件建立 JSON 请求。`project_id`、`event_id` 仅用小写字母、数字、下划线和连字符；`backend` 为 `tts` 或 `sfx`。音效填英文 `prompt`、`duration`、`variants`（1～8）、`seed`、`loop`；配音填中文 `text`、`speaker`、`instruct`、`seed`。示例在 `tools/gpu-audio/examples/`。
+为每个事件建立 JSON 请求。`project_id`、`event_id` 仅用小写字母、数字、下划线和连字符；`backend` 为 `tts` 或 `sfx`。音效填中文或英文 `prompt`、`duration`（0.5～30 秒）、`variants`（1～8）、`seed`、`loop`；配音填中文 `text`、`speaker`、`instruct`、`seed`。示例在 `tools/gpu-audio/examples/`。
 
 ```bash
 python3 tools/gpu-audio/audio_factory.py generate \

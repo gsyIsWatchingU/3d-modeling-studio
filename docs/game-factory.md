@@ -20,9 +20,9 @@
 
 ## 独立 GPU 音频工位
 
-已配置 [GPU 音频 Skill](../production-skills/gpu-audio/SKILL.md) 与 `tools/gpu-audio/audio_factory.py`：Stable Audio 3 Medium 用于音效、环境声，Qwen3-TTS 用于中文对白。跨游戏复用同一入口，按项目和声音事件保存请求、母版、模型/代码/Skill 哈希与技术检查结果，不使用商业生成 API。
+已配置 [GPU 音频 Skill](../production-skills/gpu-audio/SKILL.md) 与 `tools/gpu-audio/audio_factory.py`：MOSS-SoundEffect v2.0 用于音效、环境声，Qwen3-TTS 用于中文对白。跨游戏复用同一入口，按项目和声音事件保存请求、母版、模型/代码/Skill 哈希与技术检查结果，不使用商业生成 API。
 
-服务端先运行 `python3 tools/gpu-audio/audio_factory.py doctor` 核实环境。Stable Audio 3 需要官方模型访问权限及 Flash Attention 2；Skill 已安装不代表权重已下载或推理已验证。生成结果统一待人工试听。旧版 2D 一键生产仍使用程序声音，GPU-only 项目须走独立音频工位并另行接入事件。
+服务端先运行 `python3 tools/gpu-audio/audio_factory.py doctor` 核实环境。MOSS v2 权重无需账号，使用独立 CUDA 环境；Skill 已安装不代表权重已下载或推理已验证。生成结果统一待人工试听。旧版 2D 一键生产仍使用程序声音，GPU-only 项目须走独立音频工位并另行接入事件。
 
 ## 版本与账号
 

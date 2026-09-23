@@ -14,13 +14,23 @@ class AudioFactoryTest(unittest.TestCase):
         return {'project_id': 'test-game', 'event_id': 'step', 'backend': 'sfx', 'prompt': 'Single footstep on wood', 'duration': 2}
 
     def test_invalid_request_cannot_escape_project_or_switch_provider(self):
-        for update in ({'project_id': '../escape'}, {'event_id': '/tmp/x'}, {'backend': 'elevenlabs'}, {'variants': 99}, {'duration': float('nan')}, {'seed': True}, {'url': 'https://example.com'}):
+        for update in ({'project_id': '../escape'}, {'event_id': '/tmp/x'}, {'backend': 'elevenlabs'}, {'variants': 99}, {'duration': float('nan')}, {'duration': 31}, {'seed': True}, {'url': 'https://example.com'}):
             with self.subTest(update=update), self.assertRaises(ValueError):
                 factory.validate(dict(self.request(), **update))
 
     def test_generation_environment_is_offline(self):
         with patch.dict('os.environ', {'HF_HUB_OFFLINE': '0'}):
             self.assertEqual(factory.backend_env()['HF_HUB_OFFLINE'], '1')
+
+    def test_partial_model_download_is_not_ready(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / 'model_index.json').write_text('{}')
+            self.assertFalse(factory.cached_model_ready(tmp, 'sfx'))
+            for name in factory.SFX_FILES:
+                target = Path(tmp) / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(b'fixture')
+            self.assertTrue(factory.cached_model_ready(tmp, 'sfx'))
 
     def test_missing_runtime_never_invokes_alternative_generator(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(factory.BACKENDS, {'sfx': dict(factory.BACKENDS['sfx'], python=str(Path(tmp) / 'missing'))}), patch('subprocess.run') as run:

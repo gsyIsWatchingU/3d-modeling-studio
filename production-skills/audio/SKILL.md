@@ -10,7 +10,7 @@ description: 游戏音效、音景、配音和音乐的事件设计、生成规�
 - 配音逐句绑定角色与台词 ID、语气和时长；未经授权不模仿真实人物声音。音乐写明情绪、速度范围、配器、分层和状态切换条件，不仿制受保护旋律或录音。
 - 运行时以事件驱动，约定音量优先级、并发数、衰减、遮挡和混响区域。按引擎选原生音频或中间件，不强制安装 FMOD/Wwise。
 - 母版规格与目标压缩格式分开，响度/峰值目标按项目确定并测量；循环接缝、点击声、削波、静音头尾需实际试听。
-- 自有 GPU 生产按 [GPU 音频工位](../gpu-audio/SKILL.md) 执行：Stable Audio 3 Medium 生成音效与环境声；Qwen3-TTS 生成对白。两者使用独立环境，不调用商业生成 API，不回退到本地合成。
+- 自有 GPU 生产按 [GPU 音频工位](../gpu-audio/SKILL.md) 执行：MOSS-SoundEffect v2.0 生成音效与环境声；Qwen3-TTS 生成对白。两者使用独立环境，不调用商业生成 API，不回退到本地合成。
 - 工厂旧版 2D 完整生产仍使用程序声音；独立 GPU 音频工位不会自动替换已有游戏。GPU-only 项目不能用旧版完整生产代替音频工位，也不能把 master_audio 后处理当作模型生成。
 - 生产前执行 doctor 检查依赖、CUDA 与权重；安装 Skill 不代表模型可用。模型缺失、访问受限或显存不足时明确报错。
 
@@ -25,4 +25,4 @@ description: 游戏音效、音景、配音和音乐的事件设计、生成规�
 交付：事件清单、中文描述与模型所需提示词、声音参数、混音/触发表、实际音频及测量报告（若已生成）。
 验收：单独与混音状态均试听；关键提示在手机外放/耳机可辨认，状态切换和循环平滑。
 
-来源：skills-gamedev/game-audio、agency-agents/game-audio-engineer（MIT）；qwen3-tts-cli（Apache-2.0）；Stable Audio 3 代码（MIT）、模型权重（Stability AI Community License）。固定提交与哈希见 sources.lock.json。上游中间件要求须按 H5 平台适配。
+来源：skills-gamedev/game-audio、agency-agents/game-audio-engineer（MIT）；qwen3-tts-cli（Apache-2.0）；MOSS-SoundEffect v2.0 代码与权重（Apache-2.0）。固定提交与哈希见 sources.lock.json。上游中间件要求须按 H5 平台适配。

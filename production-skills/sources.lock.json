@@ -201,6 +201,42 @@
       "license": "MIT",
       "sha256": "0337595171d3c24fa2b2e20deee6c8a69f5cdd1815d4e638a75f95fa42945f12",
       "model_license": "Stability AI Community License"
+    },
+    {
+      "id": "moss-soundeffect-v2/README.md",
+      "repo": "OpenMOSS/MOSS-TTS",
+      "commit": "934d6826b084c46a0d033402174d5f8ac4ed2519",
+      "path": "vendor/moss-soundeffect-v2/README.md",
+      "url": "https://github.com/OpenMOSS/MOSS-TTS/blob/934d6826b084c46a0d033402174d5f8ac4ed2519/moss_soundeffect_v2/README.md",
+      "license": "Apache-2.0",
+      "sha256": "5de83166271761b725c2a7bd7a6ac046a342c2782d3f4c279f3389f040a63db5"
+    },
+    {
+      "id": "moss-soundeffect-v2/LICENSE",
+      "repo": "OpenMOSS/MOSS-TTS",
+      "commit": "934d6826b084c46a0d033402174d5f8ac4ed2519",
+      "path": "vendor/moss-soundeffect-v2/LICENSE",
+      "url": "https://github.com/OpenMOSS/MOSS-TTS/blob/934d6826b084c46a0d033402174d5f8ac4ed2519/LICENSE",
+      "license": "Apache-2.0",
+      "sha256": "e83b87b4c86fc39a3e3278705e02f3599d63b0a9fd006a6ec7aa721d38d4086d"
+    },
+    {
+      "id": "moss-soundeffect-v2/pyproject.toml",
+      "repo": "OpenMOSS/MOSS-TTS",
+      "commit": "934d6826b084c46a0d033402174d5f8ac4ed2519",
+      "path": "vendor/moss-soundeffect-v2/pyproject.toml",
+      "url": "https://github.com/OpenMOSS/MOSS-TTS/blob/934d6826b084c46a0d033402174d5f8ac4ed2519/moss_soundeffect_v2/pyproject.toml",
+      "license": "Apache-2.0",
+      "sha256": "81313fcc8aa67979dea6f2a6ecbf40587517bb6aae946a6b1c6c64ef7162dbf0"
+    },
+    {
+      "id": "moss-soundeffect-v2/MODEL_CARD.md",
+      "repo": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+      "commit": "e35df4d82fbe87fcd5d14e5d100e349c0c3c076d",
+      "path": "vendor/moss-soundeffect-v2/MODEL_CARD.md",
+      "url": "https://huggingface.co/OpenMOSS-Team/MOSS-SoundEffect-v2.0/blob/e35df4d82fbe87fcd5d14e5d100e349c0c3c076d/README.md",
+      "license": "Apache-2.0",
+      "sha256": "eff33e61f5472a0ba33ca42241d546b00b66ec7f37e28b0e0d4ba64718866449"
     }
   ]
 }

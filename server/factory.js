@@ -64,7 +64,7 @@ function createFactoryRouter() {
     const ok = (res, data, code = 200) => res.status(code).json({ success: true, data });
     router.get('/capabilities', (req, res) => ok(res, { engine: 'browser-exploration-v1', delivery: '离线浏览器探索游戏', stages: stages.map(([id, name]) => ({ id, name })),
         supported: ['AI 策划、剧本、对白与关卡数据', '矢量角色、场景、道具', '程序合成音效与循环配乐', '移动、碰撞、危险物、收集与对话', '多关卡、暂停、失败重试、触屏操作', '在线试玩、版本迭代、ZIP 工程与公开分享', '独立 GPU 3D 建模资产库'],
-        audio_workflow: { mode: 'external-gpu-cli', guide: 'audio', backends: ['stable-audio-3-medium', 'qwen3-tts-1.7b'], readiness: 'run-doctor-on-gpu-host', automatic_game_integration: false },
+        audio_workflow: { mode: 'external-gpu-cli', guide: 'audio', backends: ['moss-soundeffect-v2.0', 'qwen3-tts-1.7b'], readiness: 'run-doctor-on-gpu-host', automatic_game_integration: false },
         unavailable: ['任意游戏类型或 3D 玩法自动组装', '扩散模型原画（现有脚本缺失）', 'GPU 音频自动组装进 2D 产线', '联网对战、支付、商店上架'], notifications: getChannelStatus(req.user.id) }));
     router.get('/projects', (req, res) => ok(res, factoryDb.list(req.user.id).map(summary)));
     router.post('/projects', action((req, res) => {

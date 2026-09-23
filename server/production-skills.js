@@ -19,7 +19,7 @@ const references = {
     environment: [upstream('level-design'), 'agency-agents/level-designer.md'],
     prop: [upstream('blender-modeling'), upstream('tech-art')],
     animation: [upstream('blender-animation')],
-    audio: [upstream('game-audio'), 'agency-agents/game-audio-engineer.md', 'qwen3-tts-cli/SKILL.md', 'stable-audio-3/README.md'],
+    audio: [upstream('game-audio'), 'agency-agents/game-audio-engineer.md', 'qwen3-tts-cli/SKILL.md', 'moss-soundeffect-v2/README.md', 'moss-soundeffect-v2/MODEL_CARD.md'],
     integration: [upstream('tech-art'), upstream('game-design')],
     qa: [upstream('playtesting'), upstream('tech-art')]
 };
@@ -44,7 +44,7 @@ const skills = Object.fromEntries(Object.keys(names).map(key => {
         if (!source) throw new Error(`缺少 Skill 来源：${id}`);
         return { id: source.id, url: source.url, commit: source.commit, sha256: source.sha256, license: source.license };
     });
-    return [key, { id: `production-${key}`, name: names[key], version: key === 'audio' ? 3 : key === 'integration' ? 2 : 1, content, sources, production: true }];
+    return [key, { id: `production-${key}`, name: names[key], version: key === 'audio' ? 4 : key === 'integration' ? 2 : 1, content, sources, production: true }];
 }));
 const catalogVersion = hash(JSON.stringify(skills));
 

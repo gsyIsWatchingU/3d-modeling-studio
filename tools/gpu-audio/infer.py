@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import sys
 
-from audio_factory import BACKENDS, digest, validate, write_json
+from audio_factory import BACKENDS, cached_model_ready, digest, validate, write_json
 
 
 def main():
@@ -23,19 +23,18 @@ def main():
     if backend == 'tts':
         from qwen_tts import Qwen3TTSModel
     else:
-        from stable_audio_3 import StableAudioModel
-        from flash_attn import flash_attn_func  # Medium 缺少此依赖可能输出噪声
+        from moss_soundeffect_v2 import MossSoundEffectPipeline
     try:
-        model_path = snapshot_download(BACKENDS[backend]['model'], local_files_only=True)
+        model_path = snapshot_download(BACKENDS[backend]['model'], revision=BACKENDS[backend].get('revision'), local_files_only=True)
     except Exception:
         model_path = None
     if args.check:
-        print(json.dumps({'dependencies_ready': True, 'cuda_available': torch.cuda.is_available(), 'weights_cached': model_path is not None, 'inference_verified': False}))
+        print(json.dumps({'dependencies_ready': True, 'cuda_available': torch.cuda.is_available(), 'weights_cached': cached_model_ready(model_path, backend), 'inference_verified': False}))
         return
     if not torch.cuda.is_available():
         raise RuntimeError('CUDA 不可用；禁止 CPU 回退')
-    if not model_path:
-        raise RuntimeError('本地权重未准备；运行 prepare-model.py，Stable Audio 3 须先获得模型访问权限')
+    if not cached_model_ready(model_path, backend):
+        raise RuntimeError('本地权重未准备完整；运行 prepare-model.py')
     torch.cuda.set_device(0)
     directory = Path(args.request).parent
     if backend == 'tts':
@@ -43,7 +42,17 @@ def main():
         if str(model.device) != 'cuda:0':
             raise RuntimeError('TTS 模型未加载到 CUDA')
     else:
-        model = StableAudioModel.from_pretrained('medium', device='cuda:0')
+        model = MossSoundEffectPipeline.from_pretrained(model_path, torch_dtype=torch.bfloat16, device='cuda:0')
+        model.eval()
+        if str(model.device) != 'cuda:0':
+            raise RuntimeError('音效模型未加载到 CUDA')
+        # 核心生成组件每次前向均检查设备，禁止上游静默回退到 CPU。
+        def require_cuda(module, inputs):
+            if next(module.parameters()).device.type != 'cuda':
+                raise RuntimeError('生成组件不在 CUDA')
+        for component in (model.transformer, model.text_encoder, model.vae):
+            component.eval()
+            component.register_forward_pre_hook(require_cuda)
     outputs = []
     for i in range(request['variants']):
         seed = request['seed'] + i
@@ -53,9 +62,11 @@ def main():
                 wavs, sr = model.generate_custom_voice(text=request['text'], language='Chinese', speaker=request['speaker'], instruct=request['instruct'], max_new_tokens=2048)
                 samples = np.asarray(wavs[0], dtype=np.float32)
             else:
-                generated = model.generate(prompt=request['prompt'], duration=request['duration'], seed=seed, steps=8, sample_size=model.model_config['sample_size'])
+                generated = model(prompt=request['prompt'], seconds=request['duration'], seed=seed, num_inference_steps=100, cfg_scale=4.0)
+                if generated.device.type != 'cuda':
+                    raise RuntimeError('生成结果未来自 CUDA')
                 samples = generated[0].detach().float().cpu().numpy().T
-                sr = model.model.sample_rate
+                sr = model.sample_rate
         if not samples.size or not np.isfinite(samples).all():
             raise RuntimeError('产物为空或包含非有限值')
         peak = float(np.abs(samples).max())
@@ -69,9 +80,9 @@ def main():
         outputs.append({'file': target.name, 'sha256': digest(target), 'seed': seed, 'sample_rate': sr,
                         'channels': 1 if samples.ndim == 1 else samples.shape[1], 'duration': len(samples) / sr,
                         'source_peak': peak, 'source_rms': rms, 'gain_applied': attenuation, 'listening': 'unverified', 'loop': 'unverified'})
-    files = [p for p in Path(model_path).rglob('*') if p.is_file() and p.suffix in ('.safetensors', '.json', '.bin')]
+    files = [p for p in Path(model_path).rglob('*') if p.is_file() and p.suffix in ('.safetensors', '.json', '.bin', '.pth', '.txt')]
     evidence = {'device': 'cuda:0', 'gpu_name': torch.cuda.get_device_name(0), 'torch_version': torch.__version__,
-                'backend_version': importlib.metadata.version('qwen-tts' if backend == 'tts' else 'stable-audio-3'),
+                'backend_version': importlib.metadata.version('qwen-tts' if backend == 'tts' else 'moss-soundeffect-v2'),
                 'model_revision': Path(model_path).name, 'model_files_sha256': {str(p.relative_to(model_path)): digest(p) for p in files}, 'outputs': outputs}
     write_json(directory / 'inference.json', evidence)
 

@@ -14,9 +14,15 @@ ROOT = Path(__file__).resolve().parents[2]
 BACKENDS = {
     'tts': {'python': '/workspace/.envs/game-audio-tts/bin/python', 'module': 'qwen_tts',
             'model': 'Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice', 'license': 'Apache-2.0'},
-    'sfx': {'python': '/workspace/.envs/game-audio-sfx/bin/python', 'module': 'stable_audio_3',
-            'model': 'stabilityai/stable-audio-3-medium', 'license': 'Stability AI Community License'},
+    'sfx': {'python': '/workspace/.envs/game-audio-moss/bin/python', 'module': 'moss_soundeffect_v2',
+            'model': 'OpenMOSS-Team/MOSS-SoundEffect-v2.0', 'license': 'Apache-2.0',
+            'revision': 'e35df4d82fbe87fcd5d14e5d100e349c0c3c076d'},
 }
+SFX_FILES = ['model_index.json', 'scheduler/scheduler_config.json', 'transformer/config.json',
+             'transformer/diffusion_pytorch_model.safetensors', 'text_encoder/config.json',
+             'text_encoder/model.safetensors.index.json', 'text_encoder/model-00001-of-00002.safetensors',
+             'text_encoder/model-00002-of-00002.safetensors', 'tokenizer/tokenizer.json',
+             'tokenizer/tokenizer_config.json', 'vae/vae_128d_48k.pth']
 
 
 def digest(path):
@@ -58,8 +64,8 @@ def validate(value):
     if not isinstance(value.get(key), str) or not 1 <= len(value[key].strip()) <= 2000:
         raise ValueError(key + ' 须为 1～2000 字符')
     if value['backend'] == 'sfx':
-        if type(value.get('duration')) not in (int, float) or not .5 <= value['duration'] <= 120:
-            raise ValueError('音效 duration 须为 0.5～120 秒')
+        if type(value.get('duration')) not in (int, float) or not .5 <= value['duration'] <= 30:
+            raise ValueError('音效 duration 须为 0.5～30 秒')
     else:
         value.setdefault('speaker', 'Dylan')
         if value['speaker'] not in ('Vivian', 'Serena', 'Uncle_Fu', 'Dylan', 'Eric', 'Ryan', 'Aiden', 'Ono_Anna', 'Sohee'):
@@ -76,7 +82,16 @@ def backend_env():
     env['HF_HUB_DISABLE_PROGRESS_BARS'] = '1'
     # 权重预下载是独立步骤；生成期间禁止依赖远程下载或 API。
     env['HF_HUB_OFFLINE'] = '1'
+    env['TRANSFORMERS_OFFLINE'] = '1'
+    env['TORCHDYNAMO_DISABLE'] = '1'
     return env
+
+
+def cached_model_ready(snapshot, backend):
+    if not snapshot:
+        return False
+    required = SFX_FILES if backend == 'sfx' else ['model.safetensors', 'config.json', 'speech_tokenizer/model.safetensors', 'speech_tokenizer/config.json']
+    return all((Path(snapshot) / name).is_file() and (Path(snapshot) / name).stat().st_size > 0 for name in required)
 
 
 def doctor():
