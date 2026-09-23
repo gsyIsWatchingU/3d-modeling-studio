@@ -1,0 +1,106 @@
+profiles:
+  xhs_mobile:
+    label: 小红书移动端
+    geometry:
+      triangle_budget: 30000
+      lod_ratios: [1.0, 0.5, 0.2]
+      max_bones: 64
+      max_weights_per_vertex: 4
+    textures:
+      max_size: 1024
+      channels: [base_color, normal, orm, emissive]
+      delivery: jpeg_png
+      paint:
+        default: {views: 8, resolution: 768, roughness_floor: 0.34, specular_level: 0.32}
+        character: {views: 9, resolution: 768, roughness_floor: 0.30, specular_level: 0.30}
+        environment: {views: 8, resolution: 768, roughness_floor: 0.40, specular_level: 0.28}
+    animation:
+      fps: 30
+      root_motion: false
+      required_clips: [idle, walk, run, crouch, interact]
+      pose_quality:
+        min_hand_distance_ratio: 0.10
+        min_lateral_hand_separation_ratio: 0.06
+        max_hand_crossing_ratio: 0.0
+        max_elbow_bend_degrees: 55
+        max_upperarm_rotation_degrees: 24
+        max_root_translation_ratio: 0.01
+        min_ankle_separation_ratio: 0.015
+        min_knee_separation_ratio: 0.015
+        max_leg_crossing_ratio: 0.0
+        max_knee_bend_degrees: 95
+        max_foot_lateral_ratio: 0.38
+        max_knee_lateral_deviation_ratio: 0.08
+    audio:
+      sample_rate: 48000
+      target_lufs: -16
+      delivery: ogg
+      bitrate_kbps: 96
+    vfx:
+      delivery: flipbook
+      max_flipbook_size: 1024
+    quality:
+      uv:
+        max_out_of_range_ratio: 0.02
+        max_degenerate_triangle_ratio: 0.02
+      material:
+        min_roughness_p95: 0.14
+      render:
+        min_luma_stddev: 0.04
+        max_clipped_channel_ratio: 0.025
+        max_neutral_white_ratio: 0.002
+        min_character_height_ratio: 0.72
+        max_character_height_ratio: 1.28
+
+  steam_desktop:
+    label: Steam 桌面端
+    geometry:
+      triangle_budget: 120000
+      lod_ratios: [1.0, 0.65, 0.35, 0.15]
+      max_bones: 128
+      max_weights_per_vertex: 4
+    textures:
+      max_size: 4096
+      channels: [base_color, normal, orm, emissive]
+      delivery: pbr
+      paint:
+        default: {views: 9, resolution: 768, roughness_floor: 0.32, specular_level: 0.35}
+        character: {views: 9, resolution: 768, roughness_floor: 0.28, specular_level: 0.32}
+        environment: {views: 9, resolution: 768, roughness_floor: 0.36, specular_level: 0.32}
+    animation:
+      fps: 60
+      root_motion: false
+      required_clips: [idle, walk, run, crouch, interact, push, climb, death]
+      pose_quality:
+        min_hand_distance_ratio: 0.10
+        min_lateral_hand_separation_ratio: 0.06
+        max_hand_crossing_ratio: 0.0
+        max_elbow_bend_degrees: 55
+        max_upperarm_rotation_degrees: 24
+        max_root_translation_ratio: 0.01
+        min_ankle_separation_ratio: 0.015
+        min_knee_separation_ratio: 0.015
+        max_leg_crossing_ratio: 0.0
+        max_knee_bend_degrees: 95
+        max_foot_lateral_ratio: 0.38
+        max_knee_lateral_deviation_ratio: 0.08
+    audio:
+      sample_rate: 48000
+      target_lufs: -18
+      delivery: ogg
+      bitrate_kbps: 192
+    vfx:
+      delivery: source_and_flipbook
+      max_flipbook_size: 2048
+    quality:
+      uv:
+        max_out_of_range_ratio: 0.02
+        max_degenerate_triangle_ratio: 0.02
+      material:
+        min_roughness_p95: 0.14
+      render:
+        min_luma_stddev: 0.04
+        max_clipped_channel_ratio: 0.02
+        max_neutral_white_ratio: 0.0015
+        min_character_height_ratio: 0.72
+        max_character_height_ratio: 1.28
