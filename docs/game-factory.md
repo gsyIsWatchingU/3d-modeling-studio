@@ -22,7 +22,7 @@
 
 已配置 [GPU 音频 Skill](../production-skills/gpu-audio/SKILL.md) 与 `tools/gpu-audio/audio_factory.py`：MOSS-SoundEffect v2.0 用于音效、环境声，Qwen3-TTS 用于中文对白。跨游戏复用同一入口，按项目和声音事件保存请求、母版、模型/代码/Skill 哈希与技术检查结果，不使用商业生成 API。
 
-服务端先运行 `python3 tools/gpu-audio/audio_factory.py doctor` 核实环境。MOSS v2 权重无需账号，使用独立 CUDA 环境；Skill 已安装不代表权重已下载或推理已验证。`FACTORY_GPU_SFX=1` 时，完整生产会生成并原子替换 collect/danger/win 三个事件音效，失败即中止音频阶段，不回退为程序音效。背景配乐仍为程序生成；所有声音随游戏版本一起待人工试玩验收。
+服务端先运行 `python3 tools/gpu-audio/audio_factory.py doctor` 核实环境。MOSS v2 权重无需账号，使用独立 CUDA 环境；Skill 已安装不代表权重已下载或推理已验证。`FACTORY_GPU_SFX=1` 时，完整生产会等待串行工位、生成并原子替换 collect/danger/win 三个事件音效，失败即中止音频阶段，不回退为程序音效。背景配乐仍为程序生成；所有声音随游戏版本一起待人工试玩验收。
 
 ## 版本与账号
 

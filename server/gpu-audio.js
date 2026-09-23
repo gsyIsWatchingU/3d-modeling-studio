@@ -98,7 +98,9 @@ async function generateGpuSfx(project, spec, dir, signal) {
     const python = process.env.FACTORY_GPU_AUDIO_PYTHON || 'python3';
     const script = path.resolve(process.env.FACTORY_GPU_AUDIO_SCRIPT || path.join(root, 'tools', 'gpu-audio', 'audio_factory.py'));
     const gpu = String(Math.max(0, Math.min(7, Number.parseInt(process.env.FACTORY_GPU_AUDIO_GPU || '1', 10) || 0)));
-    const timeout = Math.max(330000, Math.min(1830000, Number.parseInt(process.env.FACTORY_GPU_AUDIO_TIMEOUT_MS || '330000', 10) || 330000));
+    const lockWait = Math.max(0, Math.min(1800, Number.parseInt(process.env.FACTORY_GPU_AUDIO_LOCK_WAIT_SECONDS || '300', 10) || 0));
+    const timeoutDefault = (lockWait + 330) * 1000;
+    const timeout = Math.max(timeoutDefault, Math.min(2130000, Number.parseInt(process.env.FACTORY_GPU_AUDIO_TIMEOUT_MS || String(timeoutDefault), 10) || timeoutDefault));
     fs.mkdirSync(requestRoot, { recursive: true });
     const generated = [];
     for (const item of buildSfxRequests(project, spec)) {
@@ -106,7 +108,7 @@ async function generateGpuSfx(project, spec, dir, signal) {
         const requestFile = path.join(requestRoot, `${projectAudioId(project.id)}-${item.id}-${crypto.randomUUID()}.json`);
         try {
             atomicFile(requestFile, JSON.stringify(item.request, null, 2));
-            const manifest = await runFactory([script, 'generate', '--request', requestFile, '--output-root', outputRoot, '--gpu', gpu], { python, timeout });
+            const manifest = await runFactory([script, 'generate', '--request', requestFile, '--output-root', outputRoot, '--gpu', gpu, '--wait-lock', String(lockWait)], { python, timeout });
             generated.push({ id: item.id, manifest, manifestPath: manifest.manifest });
         } finally { try { fs.unlinkSync(requestFile); } catch {} }
     }

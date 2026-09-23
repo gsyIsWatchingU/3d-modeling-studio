@@ -108,7 +108,7 @@ def doctor():
     return result
 
 
-def generate(request, output_root, gpu):
+def generate(request, output_root, gpu, wait_lock=0):
     request = validate(request)
     cfg = BACKENDS[request['backend']]
     if not Path(cfg['python']).is_file():
@@ -123,10 +123,15 @@ def generate(request, output_root, gpu):
     # 同机器音频生产串行；内核锁在退出或崩溃后自动释放。
     import fcntl
     with (Path(output_root).resolve() / '.audio-gpu.lock').open('a') as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise RuntimeError('音频工位正在生产，请稍后复用同一请求重试')
+        deadline = time.monotonic() + max(0, min(1800, wait_lock))
+        while True:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('音频工位正在生产，请稍后复用同一请求重试')
+                time.sleep(min(2, max(.1, deadline - time.monotonic())))
         if manifest_path.exists():
             old = json.loads(manifest_path.read_text(encoding='utf-8'))
             if old.get('status') == 'review' and old.get('outputs') and all((directory / f['file']).is_file() and digest(directory / f['file']) == f['sha256'] for f in old['outputs']):
@@ -168,9 +173,10 @@ def main():
     gen.add_argument('--request', required=True)
     gen.add_argument('--output-root', default='/workspace/3d-assets/game-audio')
     gen.add_argument('--gpu', type=int, default=0, choices=range(8))
+    gen.add_argument('--wait-lock', type=int, default=0, choices=range(1801), help='等待全局串行锁的秒数；独立 CLI 默认立即返回')
     args = parser.parse_args()
     try:
-        result = doctor() if args.command == 'doctor' else generate(json.loads(Path(args.request).read_text(encoding='utf-8-sig')), args.output_root, args.gpu)
+        result = doctor() if args.command == 'doctor' else generate(json.loads(Path(args.request).read_text(encoding='utf-8-sig')), args.output_root, args.gpu, args.wait_lock)
         print(json.dumps(result, ensure_ascii=False))
     except Exception as e:
         print(json.dumps({'status': 'failed', 'error': str(e)}, ensure_ascii=False), file=sys.stderr)
