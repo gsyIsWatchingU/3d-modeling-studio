@@ -225,6 +225,29 @@ button:disabled {
 .project-heading { align-items: flex-start; margin-bottom: 26px; }
 .project-heading h1 { font-size: 29px; }
 .project-heading p { max-width: 800px; white-space: pre-wrap; color: var(--pixel-ink-secondary); font-size: 12px; }
+.guided-panel { margin-bottom: 20px; }
+.workflow-stages { display: grid; grid-template-columns: repeat(7, minmax(126px, 1fr)); gap: 8px; margin-top: 18px; }
+.workflow-card { min-height: 154px; padding: 12px; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; text-align: left; background: var(--pixel-page); border: 1px solid var(--pixel-border-soft); }
+.workflow-card > span { color: var(--pixel-green-strong); font-size: 10px; font-weight: 800; }
+.workflow-card strong { margin-top: 8px; font-size: 12px; }
+.workflow-card small { margin-top: 7px; color: var(--pixel-ink-secondary); font-size: 10px; line-height: 1.6; flex: 1; }
+.workflow-card em { margin-top: 10px; font-size: 10px; font-style: normal; color: var(--pixel-ink-secondary); }
+.workflow-card.recommended { border: var(--pixel-border); background: var(--pixel-green-hover); }
+.workflow-card.active { border: var(--pixel-border); background: var(--pixel-surface); box-shadow: inset 5px 0 0 var(--pixel-green); }
+.workflow-card[data-status="approved"] em, .workflow-card[data-status="succeeded"] em { color: var(--pixel-green-strong); font-weight: 800; }
+.workflow-card[data-status="running"] em, .workflow-card[data-status="queued"] em { color: var(--pixel-warn); font-weight: 800; }
+.workflow-card[data-status="failed"] em { color: var(--pixel-danger); font-weight: 800; }
+.stage-workspace { margin-top: 18px; padding: 20px; border: 1px solid var(--pixel-border-soft); background: var(--pixel-page); }
+.stage-workspace .section-head { align-items: flex-start; }
+.stage-workspace select { width: 120px; min-height: 34px; padding: 5px 8px; }
+.stage-dependency { margin-top: 12px; padding: 10px 12px; background: var(--pixel-info-bg); border-left: 4px solid var(--pixel-info); color: var(--pixel-ink-secondary); font-size: 11px; line-height: 1.7; }
+#stageStatus { margin: 12px 0; color: var(--pixel-green-strong); font-size: 12px; font-weight: 700; }
+.stage-output { margin-top: 12px; max-height: 520px; overflow: auto; padding: 16px; background: var(--pixel-surface); border: 1px solid var(--pixel-border-soft); }
+.stage-output pre { margin: 0; white-space: pre-wrap; font: 12px/1.8 var(--pixel-font); }
+.preview-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin-top: 16px; }
+.preview-gallery img { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; background: var(--pixel-page); border: 1px solid var(--pixel-border-soft); }
+#conceptUpload, #stageReview { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--pixel-border-soft); }
+#conceptImages { display: block; width: 100%; margin: 6px 0 10px; padding: 10px; border: 1px dashed var(--pixel-border-soft); background: var(--pixel-surface); }
 .workspace-grid { display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 20px; }
 .panel { background: var(--pixel-surface); border: var(--pixel-border); padding: 20px; min-width: 0; }
 .production-panel .section-head { align-items: flex-start; }
@@ -342,12 +365,14 @@ iframe { width: 100%; height: 680px; max-height: 80vh; border: var(--pixel-borde
     #account { display: none; }
     .artifact-grid { grid-template-columns: 1fr; }
     .pipeline { gap: 8px; padding: 12px 14px; font-size: 11px; }
+    .workflow-stages { grid-template-columns: repeat(4, minmax(130px, 1fr)); }
 }
 @media (max-width: 900px) {
     .workspace-grid { grid-template-columns: 1fr; }
     .stages { display: grid; grid-template-columns: 1fr 1fr; column-gap: 16px; }
     .pipeline { flex-wrap: wrap; }
     .project-heading { flex-wrap: wrap; }
+    .workflow-stages { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
     .topbar { padding: 10px 18px; height: auto; min-height: 64px; }
     .topbar nav { flex-wrap: wrap; font-size: 11px; }
     h1 { font-size: 29px; }
@@ -377,6 +402,8 @@ iframe { width: 100%; height: 680px; max-height: 80vh; border: var(--pixel-borde
     iframe { height: 670px; max-height: none; }
     .empty { padding: 60px 10px; }
     .section-head { flex-wrap: wrap; }
+    .workflow-stages { grid-template-columns: 1fr; }
+    .workflow-card { min-height: 118px; }
 }
 
 /* ==================== 减少动效 ==================== */

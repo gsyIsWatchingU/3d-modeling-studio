@@ -101,7 +101,7 @@ test('stdio MCP：账号隔离、固定 Skill、异步飞书通知、下载与�
     const call = (name, args = {}) => client.callTool({ name, arguments: args });
     const data = response => JSON.parse(response.content[0].text);
     const toolNames = (await client.listTools()).tools.map(tool => tool.name);
-    for (const name of ['create_model', 'get_model', 'create_production_plan', 'get_production_guide', 'list_production_skills', 'list_production_plans']) assert.ok(toolNames.includes(name));
+    for (const name of ['create_model', 'get_model', 'create_production_plan', 'get_production_guide', 'list_production_skills', 'list_production_plans', 'start_game_stage', 'get_game_stage_artifact']) assert.ok(toolNames.includes(name));
     const catalog = data(await call('list_production_skills'));
     assert.equal(catalog.stages.length, 9);
     assert.equal(catalog.stages.find(stage => stage.id === 'audio').execution, 'specification');

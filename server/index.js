@@ -31,6 +31,7 @@ const { createProductionRouter } = require('./production');
 const { getCatalog, modelingSkills } = require('./production-skills');
 const { createFactoryRouter } = require('./factory');
 const { startFactoryWorker } = require('./factory-worker');
+const { startStageWorker } = require('./stage-worker');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -403,6 +404,7 @@ app.use((error, req, res, next) => {
 const notificationWorker = startNotificationWorker();
 const modelWorker = startModelWorker();
 const factoryWorker = startFactoryWorker();
+const stageWorker = startStageWorker();
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`3D 建模工作室已启动，端口 ${PORT}`);
@@ -413,5 +415,6 @@ process.on('SIGTERM', () => {
     modelWorker.stop();
     notificationWorker.stop();
     factoryWorker.stop();
+    stageWorker.stop();
     process.exit(0);
 });

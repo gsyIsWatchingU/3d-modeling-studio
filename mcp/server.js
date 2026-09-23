@@ -12,7 +12,7 @@ function createServer({ baseUrl, token }) {
     if (base.protocol !== 'https:' && !(base.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(base.hostname))) throw new Error('远程平台必须使用 HTTPS');
     if (!/^studio_[A-Za-z0-9_-]{43}$/.test(token || '')) throw new Error('请配置网页登录后创建的 STUDIO_TOKEN');
     const server = new McpServer({ name: 'game-production-factory', version: '2.0.0' }, {
-        instructions: '先用 get_factory_capabilities 确认实际产线能力，再用 list_game_projects 查找项目。浏览器探索游戏用 create_game_project、start_game_production、get_game_project、get_game_artifacts、export_game 完成整条生产链，网站与 MCP 共享队列和固定 Skill。内置矢量美术与程序声音不是扩散原画或文生音频。独立 3D 用 create_model，可通过 get_game_model_plan 关联项目。其他创作可读取 get_production_guide。生成成功不等于人工批准，审核须在网站完成；仅在用户明确要求发布时调用 publish_game。'
+        instructions: '先用 get_factory_capabilities 确认实际产线能力，再用 list_game_projects 查找项目。可用 start_game_stage 分别生成策划、剧本或预览图制作单，也可用 start_game_production 生产完整 2D 探索游戏。网站与 MCP 共享项目、队列和后端版本。预览图制作单不是图片，实际图片须在网站上传并人工批准；独立 3D 用 create_model，可通过 get_game_model_plan 关联项目。生成成功不等于人工批准，审核须在网站完成；仅在用户明确要求发布时调用 publish_game。'
     });
 
     async function request(route, options = {}) {
@@ -43,7 +43,7 @@ function createServer({ baseUrl, token }) {
         });
     }
     tool('get_account', '查看当前凭证所属账号、固定 Skill 与飞书通知是否已配置。不会返回密码或 Webhook。', {}, () => api('/api/mcp/me'));
-    const projectId = z.string().regex(/^G[0-9a-f-]{36}$/), runId = z.string().regex(/^F[0-9a-f-]{36}$/);
+    const projectId = z.string().regex(/^G[0-9a-f-]{36}$/), runId = z.string().regex(/^F[0-9a-f-]{36}$/), stageRunId = z.string().regex(/^S[0-9a-f-]{36}$/);
     const gameRun = { project_id: projectId, run_id: runId };
     const gameRoute = a => `/api/factory/projects/${a.project_id}/runs/${a.run_id}`;
     const post = body => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -61,6 +61,18 @@ function createServer({ baseUrl, token }) {
         name: z.string().min(1).max(80), brief: z.string().min(10).max(4000), style: z.string().max(500).optional()
     }, args => api('/api/factory/projects', post(args)), false);
     tool('get_game_project', '读取项目所有版本、阶段进度、错误、产物状态及审核结果。', { project_id: projectId }, args => api(`/api/factory/projects/${args.project_id}`));
+    tool('start_game_stage', '异步单独生成策划、剧本或预览图制作单。允许缺少已批准上游时独立起草，但返回结果会记录缺失依赖。相同 request_key 重试必须复用。', {
+        project_id: projectId, stage_id: z.enum(['design', 'narrative', 'concept']), instructions: z.string().max(3000).default(''), request_key: z.string().regex(/^[a-zA-Z0-9-]{8,80}$/)
+    }, a => api(`/api/factory/projects/${a.project_id}/stage-runs`, post({ stage_id: a.stage_id, instructions: a.instructions, request_key: a.request_key })), false);
+    tool('get_game_stage_artifact', '读取分阶段生成的制作文档，或把预览图下载到本机。不会替代网站人工验收。', {
+        project_id: projectId, stage_run_id: stageRunId, file: z.string().regex(/^(output\.md|manifest\.json|previews\/[a-zA-Z0-9-]+\.(png|jpg|webp))$/), download_path: z.string().optional()
+    }, async a => {
+        const route = `/api/factory/projects/${a.project_id}/stage-runs/${a.stage_run_id}/files/${a.file}`;
+        const response = await request(route); if (!response.ok) throw new Error(`阶段产物读取失败（${response.status}）`);
+        if (a.download_path) { await saveDownload(response, a.download_path); return { saved_path: a.download_path }; }
+        if (!/\.(md|json)$/.test(a.file)) return { download_url: new URL(route, base).href, note: '需登录或提供 download_path 下载图片' };
+        const content = await response.text(); return { content: content.slice(0, 80000), truncated: content.length > 80000 };
+    });
     tool('get_game_model_plan', '为游戏取得关联 3D 建模计划；create_model 可使用返回的 production_plan_id。浏览器探索引擎不自动渲染这些 3D 资产。', { project_id: projectId }, args => api(`/api/factory/projects/${args.project_id}/model-plan`, post({})), false);
     tool('start_game_production', '异步启动完整游戏生产或迭代版本。相同 request_key 幂等返回同一任务，超时重试必须复用该值。默认使用当前账号飞书。', {
         project_id: projectId, instructions: z.string().max(3000).default(''), request_key: z.string().regex(/^[a-zA-Z0-9-]{8,80}$/), notify_feishu: z.boolean().default(true)

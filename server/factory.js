@@ -1,4 +1,5 @@
 const express = require('express');
+const multer = require('multer');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
@@ -8,13 +9,16 @@ const { requireModelUser, requireUser } = require('./auth');
 const { getCatalog, getGuide, catalogVersion } = require('./production-skills');
 const { getChannelStatus } = require('./notifier');
 const { stages, runDir } = require('./factory-worker');
-const { inventory, exportZip, audit } = require('./factory-build');
+const { atomicFile, inventory, exportZip, audit } = require('./factory-build');
 const { validateGame } = require('./factory-spec');
+const { detectImageType } = require('./utils');
+const { generatedStageIds, publicWorkflowStages, stageDefinition } = require('./stage-workflow');
+const { stageRunDir } = require('./stage-worker');
 const input = z.object({ name: z.string().trim().min(1).max(80), brief: z.string().trim().min(10).max(4000), style: z.string().trim().max(500).default('清晰、克制、色彩统一的矢量风格') });
 const allowedFiles = /^(index\.html|runtime\.js|game\.json|qa\.json|animation\.json|assets\/(player\.svg|npc\.svg|item\.svg|collect\.wav|danger\.wav|win\.wav|music\.wav)|docs\/(design\.md|narrative\.md|art\.md|audio\.md|skill-snapshot\.json))$/;
 function summary(project) {
     const { guides, owner_id, ...rest } = project;
-    return { ...rest, runs: project.runs.map(r => ({ ...r, notifications: notificationDb.listForJob(r.id).map(({ channel, status, last_error }) => ({ channel, status, last_error })) })) };
+    return { ...rest, stage_runs: project.stage_runs || [], runs: project.runs.map(r => ({ ...r, notifications: notificationDb.listForJob(r.id).map(({ channel, status, last_error }) => ({ channel, status, last_error })) })) };
 }
 function serveFile(res, dir, filename, isPublic = false) {
     if (!allowedFiles.test(filename) || (isPublic && !/^(index\.html|runtime\.js|assets\/)/.test(filename))) return res.status(404).end();
@@ -35,8 +39,21 @@ function serveFile(res, dir, filename, isPublic = false) {
     if (filename.endsWith('.md')) res.type('text/plain');
     res.sendFile(target);
 }
+function serveStageFile(res, project, run, filename) {
+    if (!/^(output\.md|manifest\.json|previews\/[a-zA-Z0-9-]+\.(png|jpg|webp))$/.test(filename)) return res.status(404).end();
+    const target = path.join(stageRunDir(project, run), filename);
+    if (!fs.existsSync(target)) return res.status(404).end();
+    res.setHeader('Cache-Control', 'private, no-store');
+    if (filename.endsWith('.md')) res.type('text/plain');
+    return res.sendFile(target);
+}
 function createFactoryRouter() {
     const router = express.Router({ strict: true });
+    const previewUpload = multer({
+        storage: multer.memoryStorage(),
+        limits: { files: 6, fileSize: 10 * 1024 * 1024, fields: 5 },
+        fileFilter: (req, file, callback) => callback(null, ['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype))
+    });
     router.get('/play/:token', (req, res) => res.redirect(`/api/factory/play/${encodeURIComponent(req.params.token)}/`));
     router.get('/play/:token/{*file}', (req, res) => {
         if (!/^[a-f0-9]{48}$/.test(req.params.token)) return res.status(404).end();
@@ -61,8 +78,10 @@ function createFactoryRouter() {
     };
     const projectFor = req => { const p = factoryDb.get(req.params.id, req.user.id); if (!p) throw Object.assign(new Error('游戏项目不存在'), { status: 404 }); return p; };
     const runFor = (req, p) => { const r = p.runs.find(r => r.id === req.params.run); if (!r) throw Object.assign(new Error('生产版本不存在'), { status: 404 }); return r; };
+    const stageRunFor = (req, p) => { const r = (p.stage_runs || []).find(item => item.id === req.params.stageRun); if (!r) throw Object.assign(new Error('阶段版本不存在'), { status: 404 }); return r; };
     const ok = (res, data, code = 200) => res.status(code).json({ success: true, data });
     router.get('/capabilities', (req, res) => ok(res, { engine: 'browser-exploration-v1', delivery: '离线浏览器探索游戏', stages: stages.map(([id, name]) => ({ id, name })),
+        workflow_stages: publicWorkflowStages(),
         supported: ['AI 策划、剧本、对白与关卡数据', '矢量角色、场景、道具', '程序合成音效与循环配乐', '移动、碰撞、危险物、收集与对话', '多关卡、暂停、失败重试、触屏操作', '在线试玩、版本迭代、ZIP 工程与公开分享', '独立 GPU 3D 建模资产库'],
         audio_workflow: { mode: 'external-gpu-cli', guide: 'audio', backends: ['moss-soundeffect-v2.0', 'qwen3-tts-1.7b'], readiness: 'run-doctor-on-gpu-host', automatic_game_integration: false },
         unavailable: ['任意游戏类型或 3D 玩法自动组装', '扩散模型原画（现有脚本缺失）', 'GPU 音频自动组装进 2D 产线', '联网对战、支付、商店上架'], notifications: getChannelStatus(req.user.id) }));
@@ -70,7 +89,7 @@ function createFactoryRouter() {
     router.post('/projects', action((req, res) => {
         const data = input.parse(req.body);
         const guides = getCatalog().stages.map(s => getGuide(s.id));
-        const p = factoryDb.create({ ...data, engine: 'browser-exploration-v1', catalog_version: catalogVersion, guides }, req.user.id);
+        const p = factoryDb.create({ ...data, engine: 'browser-exploration-v1', catalog_version: catalogVersion, guides, stage_runs: [] }, req.user.id);
         ok(res, summary(p), 201);
     }));
     router.get('/projects/:id', action((req, res) => {
@@ -85,6 +104,90 @@ function createFactoryRouter() {
         }
         ok(res, { production_plan_id: p.production_plan_id, url: `/modeling.html?plan=${p.production_plan_id}` });
     }));
+    router.post('/projects/:id/workflow-stages/modeling/review', requireUser, action((req, res) => {
+        const p = projectFor(req);
+        const review = z.object({ status: z.enum(['approved', 'changes_requested']), notes: z.string().trim().min(5).max(2000), confirmed: z.literal(true), reference_id: z.string().regex(/^J\d+$/) }).parse(req.body);
+        const job = jobDb.list(100, req.user.id).find(item => item.id === review.reference_id && item.production_plan_id === p.production_plan_id);
+        if (!job || job.status !== 'succeeded') throw new Error('请先在关联的 3D 建模工位完成并检查模型');
+        const next = factoryDb.change(p.id, req.user.id, project => {
+            project.stage_reviews ||= {}; project.stage_reviews.modeling = { ...review, reviewer: req.user.id, reviewed_at: new Date().toISOString() };
+        });
+        ok(res, summary(next));
+    }));
+    router.post('/projects/:id/stage-runs', action((req, res) => {
+        const data = z.object({
+            stage_id: z.string().refine(id => generatedStageIds.has(id), '此阶段不能在独立生成工位启动'),
+            instructions: z.string().trim().max(3000).default(''),
+            request_key: z.string().regex(/^[a-zA-Z0-9-]{8,80}$/)
+        }).parse(req.body);
+        const p = projectFor(req), duplicate = (p.stage_runs || []).find(run => run.request_key === data.request_key);
+        if (duplicate) return ok(res, duplicate);
+        const definition = stageDefinition(data.stage_id);
+        let result;
+        factoryDb.change(p.id, req.user.id, (project, all) => {
+            project.stage_runs ||= [];
+            if (project.stage_runs.some(run => ['queued', 'running'].includes(run.status))) throw new Error('本项目已有独立阶段任务，请等待完成');
+            if (project.runs.some(run => ['queued', 'running'].includes(run.status))) throw new Error('本项目正在进行完整生产，请等待完成');
+            if (project.stage_runs.length >= 80) throw new Error('每个项目最多保留 80 个阶段版本');
+            if (all.flatMap(item => item.stage_runs || []).filter(run => ['queued', 'running'].includes(run.status)).length >= 8) throw new Error('阶段生产队列已满，请稍后再试');
+            const inputs = [], missing = [];
+            for (const dependency of definition.depends_on) {
+                const approved = project.stage_runs.filter(run => run.stage_id === dependency && run.review?.status === 'approved').at(-1);
+                if (approved) inputs.push(approved.id); else missing.push(dependency);
+            }
+            result = {
+                ...data, id: `S${crypto.randomUUID()}`, stage_name: definition.name,
+                version: project.stage_runs.filter(run => run.stage_id === data.stage_id).length + 1,
+                input_run_ids: inputs, missing_approved_inputs: missing,
+                status: 'queued', review: { status: 'pending' }, artifacts: [], created_at: new Date().toISOString()
+            };
+            project.stage_runs.push(result);
+        });
+        ok(res, result, 202);
+    }));
+    router.get('/projects/:id/stage-runs/:stageRun/files', action((req, res) => {
+        const p = projectFor(req), run = stageRunFor(req, p); ok(res, run.artifacts || []);
+    }));
+    router.get('/projects/:id/stage-runs/:stageRun/files/{*file}', action((req, res) => {
+        const p = projectFor(req), run = stageRunFor(req, p);
+        return serveStageFile(res, p, run, (req.params.file || []).join('/'));
+    }));
+    router.post('/projects/:id/stage-runs/:stageRun/previews', requireUser, previewUpload.array('images', 6), action((req, res) => {
+        const p = projectFor(req), run = stageRunFor(req, p), files = req.files || [];
+        if (run.stage_id !== 'concept' || run.status !== 'succeeded') throw new Error('请先完成预览图制作单');
+        if (!files.length) throw new Error('请选择需要保存的预览图');
+        if (files.reduce((sum, file) => sum + file.size, 0) > 30 * 1024 * 1024) throw new Error('预览图总大小不能超过 30 MB');
+        if ((run.artifacts || []).filter(item => item.type === 'image').length + files.length > 6) throw new Error('每个预览图版本最多保存 6 张图片');
+        const validated = files.map(file => {
+            const type = detectImageType(file.buffer.subarray(0, 32));
+            if (!type) throw new Error(`${file.originalname} 不是有效的 JPG、PNG 或 WebP 图片`);
+            return { file, type };
+        });
+        const saved = validated.map(({ file, type }) => {
+            const name = `${crypto.randomUUID()}${type.ext}`, relative = `previews/${name}`, target = path.join(stageRunDir(p, run), relative);
+            fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, file.buffer);
+            return { path: relative, type: 'image', bytes: file.size, sha256: crypto.createHash('sha256').update(file.buffer).digest('hex'), original_name: path.basename(file.originalname).slice(0, 120), created_at: new Date().toISOString() };
+        });
+        const manifestPath = path.join(stageRunDir(p, run), 'manifest.json');
+        const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')); manifest.artifacts = [...(run.artifacts || []), ...saved];
+        atomicFile(manifestPath, JSON.stringify(manifest, null, 2));
+        const next = factoryDb.change(p.id, req.user.id, project => {
+            const item = project.stage_runs.find(value => value.id === run.id); item.artifacts.push(...saved); item.deliverable_status = 'assets_ready';
+        });
+        ok(res, (next.stage_runs.find(item => item.id === run.id).artifacts || []), 201);
+    }));
+    router.post('/projects/:id/stage-runs/:stageRun/review', requireUser, action((req, res) => {
+        const p = projectFor(req), run = stageRunFor(req, p);
+        const review = z.object({ status: z.enum(['approved', 'changes_requested']), notes: z.string().trim().min(5).max(2000), confirmed: z.literal(true) }).parse(req.body);
+        if (run.status !== 'succeeded') throw new Error('阶段版本尚未生成完成');
+        if (run.stage_id === 'concept' && review.status === 'approved' && !(run.artifacts || []).some(item => item.type === 'image')) throw new Error('请先上传实际预览图，再进行人工批准');
+        const next = factoryDb.change(p.id, req.user.id, project => {
+            project.stage_runs.find(item => item.id === run.id).review = { ...review, reviewer: req.user.id, reviewed_at: new Date().toISOString() };
+        });
+        const manifestPath = path.join(stageRunDir(p, run), 'manifest.json');
+        if (fs.existsSync(manifestPath)) { const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')); manifest.review = next.stage_runs.find(item => item.id === run.id).review; atomicFile(manifestPath, JSON.stringify(manifest, null, 2)); }
+        ok(res, summary(next));
+    }));
     router.post('/projects/:id/runs', action((req, res) => {
         const data = z.object({ instructions: z.string().trim().max(3000).default(''), channels: z.array(z.enum(['feishu', 'email', 'wecom'])).max(3).default([]), request_key: z.string().regex(/^[a-zA-Z0-9-]{8,80}$/) }).parse(req.body);
         const p = projectFor(req), duplicate = p.runs.find(r => r.request_key === data.request_key);
@@ -93,6 +196,7 @@ function createFactoryRouter() {
         let result;
         factoryDb.change(p.id, req.user.id, (q, all) => {
             if (q.runs.some(r => ['queued', 'running'].includes(r.status))) throw new Error('本项目已有生产任务，请等待完成或取消');
+            if ((q.stage_runs || []).some(r => ['queued', 'running'].includes(r.status))) throw new Error('本项目正在进行独立阶段任务，请等待完成');
             if (q.runs.length >= 30) throw new Error('每个项目最多保留 30 个版本');
             if (all.flatMap(p => p.runs).filter(r => ['queued', 'running'].includes(r.status)).length >= 6) throw new Error('当前生产队列已满，请稍后再试');
             if (all.filter(p => p.owner_id === req.user.id).flatMap(p => p.runs).filter(r => Date.now() - Date.parse(r.created_at) < 6 * 3600000).length >= 12) throw new Error('6 小时内最多生成 12 个版本');
