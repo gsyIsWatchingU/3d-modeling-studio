@@ -44,6 +44,7 @@ button, summary, select, input[type="checkbox"] { cursor: pointer; }
     flex-shrink: 0;
 }
 .brand-block { display: flex; align-items: baseline; gap: 14px; min-width: 0; }
+.app-bar-icon { width: 26px; height: 26px; align-self: center; border-radius: 5px; object-fit: cover; flex: 0 0 auto; }
 .app-bar-title { font-size: 17px; font-weight: 800; letter-spacing: .5px; white-space: nowrap; }
 .app-bar-subtitle { color: var(--pixel-ink-secondary); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .header-actions { display: flex; align-items: center; gap: 10px; }
@@ -333,6 +334,8 @@ input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--pixel-gr
     box-shadow: 6px 6px 0 rgba(23, 28, 24, .12);
 }
 .login-brand { display: flex; flex-direction: column; gap: 4px; margin-bottom: 18px; }
+.login-title-row { display: flex; align-items: center; gap: 10px; }
+.login-icon { width: 32px; height: 32px; border-radius: 6px; object-fit: cover; flex: 0 0 auto; }
 .login-subtitle { color: var(--pixel-ink-secondary); font-size: 12px; }
 .auth-tabs { display: flex; gap: 0; margin-bottom: 18px; border-bottom: var(--pixel-border); }
 .auth-tab {
