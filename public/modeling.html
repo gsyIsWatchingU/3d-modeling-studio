@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="上传多张参考图，选择建模 Skill，异步生成并接收结果通知。">
+    <title>3D 建模工作室</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="/vendor/three/build/three.min.js"></script>
+    <script src="/vendor/three/examples/js/controls/OrbitControls.js"></script>
+    <script src="/vendor/three/examples/js/loaders/GLTFLoader.js"></script>
+</head>
+<body>
+    <div id="app">
+        <header class="app-bar">
+            <div class="brand-block">
+                <span class="app-bar-title">3D 建模工作室_</span>
+                <span class="app-bar-subtitle">上传参考图，后台自动生成，完成后通知你</span>
+            </div>
+            <div class="header-actions">
+                <a class="btn compact" href="/">游戏工厂</a>
+                <span class="service-badge" id="serviceBadge">正在检查服务</span>
+                <span class="user-chip" id="currentUser" hidden></span>
+                <button class="btn compact" id="logoutBtn" type="button" hidden>退出</button>
+                <button class="btn compact" id="openSettingsBtn" type="button">设置</button>
+                <button class="btn compact" id="openProductionBtn" type="button">游戏制作流</button>
+            </div>
+        </header>
+
+        <div class="app-main">
+            <aside class="workflow" aria-label="建模流程">
+                <div class="flow-intro">
+                    <strong>三步完成建模</strong>
+                    <span>按顺序填写，提交后可以关闭页面。</span>
+                </div>
+
+                <section class="step-card" aria-labelledby="step1Title">
+                    <h2 id="step1Title"><span class="step-no">01</span>上传参考图</h2>
+                    <p class="step-copy">第一张用于生成，请选择主体完整、背景干净的图片。其余图片保留为辅助参考，暂不参与多视角重建。</p>
+                    <div class="upload-area" id="uploadArea" tabindex="0" role="button" aria-label="选择参考图片">
+                        <input type="file" id="fileInput" accept="image/jpeg,image/png,image/webp" multiple hidden>
+                        <span class="upload-icon" aria-hidden="true">+</span>
+                        <strong>拖入图片，或点击选择</strong>
+                        <span class="upload-hint">JPG / PNG / WebP，单张不超过 10 MB</span>
+                    </div>
+                    <div class="image-grid" id="imageGrid" aria-live="polite"></div>
+                    <div class="form-group">
+                        <label for="modelNameInput">模型名称 <span>可选</span></label>
+                        <input type="text" id="modelNameInput" maxlength="80" placeholder="例如：复古台灯">
+                    </div>
+                    <div class="form-group">
+                        <label for="promptInput">建模要求 <span id="promptCount">0/1000</span></label>
+                        <textarea id="promptInput" maxlength="1000" placeholder="例如：保留黄铜材质，补全背面结构，底座不要变形。"></textarea>
+                        <p class="step-copy">后端会将要求与 Skill 转为建模参数。精确造型、颜色和发光等暂不能自动落实的要求，会单独列为待验收项。</p>
+                    </div>
+                </section>
+
+                <section class="step-card" aria-labelledby="step2Title">
+                    <h2 id="step2Title"><span class="step-no">02</span>选择建模方式</h2>
+                    <div class="two-columns">
+                        <div class="form-group">
+                            <label for="assetKindSelect">模型类型</label>
+                            <select id="assetKindSelect"></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="profileSelect">质量档位</label>
+                            <select id="profileSelect"></select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="productionPlanSelect">关联制作计划 <span>可选</span></label>
+                        <select id="productionPlanSelect"><option value="">独立建模</option></select>
+                        <p class="step-copy" id="productionFixedSkills">自动使用制作通则、通用建模和道具规范。</p>
+                    </div>
+                    <div class="skill-summary">
+                        <span>我的每次必用 Skill</span>
+                        <strong id="defaultSkillName">正在加载</strong>
+                    </div>
+                    <div class="form-group">
+                        <label for="extraSkillSelect">本次附加 Skill</label>
+                        <select id="extraSkillSelect">
+                            <option value="">不使用</option>
+                        </select>
+                    </div>
+                    <details class="inline-skill">
+                        <summary>手动补充本次 Skill</summary>
+                        <textarea id="inlineSkillInput" maxlength="1000" placeholder="只对本次任务生效，例如：底部必须封口，避免透明材质。"></textarea>
+                        <span class="field-hint">提交后会保存快照，后续修改固定 Skill 不影响本任务。</span>
+                    </details>
+                </section>
+
+                <section class="step-card" aria-labelledby="step3Title">
+                    <h2 id="step3Title"><span class="step-no">03</span>开始并接收结果</h2>
+                    <fieldset class="notification-options">
+                        <legend>完成后通知我</legend>
+                        <label><input type="checkbox" value="email" class="channel-input"> 邮箱 <small data-channel-status="email">未配置</small></label>
+                        <label><input type="checkbox" value="feishu" class="channel-input"> 飞书 <small data-channel-status="feishu">未配置</small></label>
+                        <label><input type="checkbox" value="wecom" class="channel-input"> 企业微信 <small data-channel-status="wecom">未配置</small></label>
+                    </fieldset>
+                    <div class="service-notice" id="serviceNotice" role="status">正在检查建模服务…</div>
+                    <button class="btn primary generate-btn" id="generateBtn" type="button" disabled>
+                        <span class="btn-text">开始建模</span>
+                        <span class="loading" hidden></span>
+                    </button>
+                    <p class="submit-hint">提交后任务在服务器运行，刷新或关闭页面不会中断。</p>
+                </section>
+            </aside>
+
+            <main class="viewport" aria-label="3D 模型预览">
+                <canvas id="canvas"></canvas>
+                <div class="empty-view" id="emptyView">
+                    <span class="empty-icon">3D</span>
+                    <strong>模型完成后在这里预览</strong>
+                    <p>你可以旋转、缩放并下载通过校验的 GLB 文件。</p>
+                </div>
+                <div class="toolbar-top" id="viewerToolbar" hidden>
+                    <button class="tool-btn" id="resetCameraBtn" type="button" title="重置视角">重置</button>
+                    <button class="tool-btn" id="wireframeBtn" type="button" title="线框模式">线框</button>
+                    <button class="tool-btn" id="autoRotateBtn" type="button" title="自动旋转">旋转</button>
+                    <a class="tool-btn" id="downloadModelBtn" href="#" download>下载</a>
+                </div>
+                <section class="task-progress" id="taskProgress" aria-live="polite">
+                    <div class="task-progress-head">
+                        <div>
+                            <span class="eyebrow">当前任务</span>
+                            <strong id="activeJobTitle">尚未提交任务</strong>
+                        </div>
+                        <span class="status-chip" id="activeJobStatus">等待开始</span>
+                    </div>
+                    <ol class="progress-steps" id="progressSteps">
+                        <li data-stage="queued">上传并排队</li>
+                        <li data-stage="generating">生成模型</li>
+                        <li data-stage="downloading">保存文件</li>
+                        <li data-stage="validating">校验模型</li>
+                        <li data-stage="succeeded">通知结果</li>
+                    </ol>
+                    <p class="progress-message" id="progressMessage">完成左侧三步后，任务状态会显示在这里。</p>
+                    <button class="btn compact retry-btn" id="retryJobBtn" type="button" hidden>重新尝试</button>
+                </section>
+            </main>
+
+            <aside class="history-panel" aria-label="最近任务">
+                <div class="history-head">
+                    <div>
+                        <span class="eyebrow">任务记录</span>
+                        <h2>最近任务</h2>
+                    </div>
+                    <button class="text-button" id="refreshJobsBtn" type="button">刷新</button>
+                </div>
+                <div class="job-list" id="jobList">
+                    <div class="empty-list">还没有任务</div>
+                </div>
+            </aside>
+        </div>
+    </div>
+
+    <dialog class="settings-dialog" id="settingsDialog">
+        <div class="dialog-head">
+            <div>
+                <span class="eyebrow">高级设置</span>
+                <h2>服务、Skill 与通知</h2>
+            </div>
+            <button class="btn compact" id="closeSettingsBtn" type="button">关闭</button>
+        </div>
+        <div class="settings-content">
+            <section class="settings-section">
+                <h3><span>[01]</span> 建模服务</h3>
+                <p>主页面只显示是否可用，地址与密钥保留在服务器。</p>
+                <div class="form-group">
+                    <label for="providerUrlInput">Forge3D 任务接口</label>
+                    <input type="url" id="providerUrlInput" placeholder="http://127.0.0.1:8091/v1/jobs">
+                </div>
+                <div class="form-group">
+                    <label for="providerKeyInput">API Key <span>留空表示不修改</span></label>
+                    <input type="password" id="providerKeyInput" autocomplete="new-password" placeholder="未配置时可留空">
+                </div>
+                <button class="btn" id="saveProviderBtn" type="button">保存建模服务</button>
+            </section>
+
+            <section class="settings-section">
+                <h3><span>[02]</span> 固定 Skill</h3>
+                <p>默认 Skill 每次自动使用，也可以在任务中临时附加其他 Skill。</p>
+                <div class="skill-manager" id="skillManager"></div>
+                <details class="add-skill-panel">
+                    <summary>上传或新建 Skill</summary>
+                    <div class="form-group">
+                        <label for="skillNameInput">名称</label>
+                        <input type="text" id="skillNameInput" maxlength="60" placeholder="例如：鞋类结构优化">
+                    </div>
+                    <div class="form-group">
+                        <label for="skillFileInput">Skill 文件 <span>可选，支持 SKILL.md / TXT</span></label>
+                        <input type="file" id="skillFileInput" accept=".md,.txt,.json,text/markdown,text/plain,application/json">
+                    </div>
+                    <div class="form-group">
+                        <label for="skillContentInput">或直接填写内容</label>
+                        <textarea id="skillContentInput" maxlength="6000" placeholder="写清造型、材质、拓扑或导出要求。"></textarea>
+                    </div>
+                    <button class="btn" id="addSkillBtn" type="button">保存 Skill</button>
+                </details>
+            </section>
+
+            <section class="settings-section">
+                <h3><span>[03]</span> 结果通知</h3>
+                <p>通知设置仅属于当前账号，网页和 MCP 提交的任务共用。飞书机器人会向对应群发送消息；密钥保存后不再显示。</p>
+                <details open>
+                    <summary>邮箱</summary>
+                    <div class="two-columns">
+                        <div class="form-group"><label for="emailRecipientInput">收件邮箱</label><input type="email" id="emailRecipientInput"></div>
+                        <div class="form-group"><label for="smtpHostInput">SMTP 地址</label><input type="text" id="smtpHostInput" placeholder="smtp.example.com"></div>
+                        <div class="form-group"><label for="smtpPortInput">端口</label><input type="number" id="smtpPortInput" min="1" max="65535" value="465"></div>
+                        <div class="form-group"><label for="smtpUserInput">SMTP 用户名</label><input type="text" id="smtpUserInput"></div>
+                    </div>
+                    <div class="form-group"><label for="smtpPassInput">SMTP 密码 <span>留空表示不修改</span></label><input type="password" id="smtpPassInput" autocomplete="new-password"></div>
+                    <label class="check-line"><input type="checkbox" id="smtpSecureInput" checked> 使用 SSL/TLS</label>
+                </details>
+                <details>
+                    <summary>飞书机器人</summary>
+                    <div class="form-group"><label for="feishuWebhookInput">Webhook <span>留空表示不修改</span></label><input type="password" id="feishuWebhookInput" autocomplete="new-password"></div>
+                </details>
+                <details>
+                    <summary>企业微信机器人</summary>
+                    <div class="form-group"><label for="wecomWebhookInput">Webhook <span>留空表示不修改</span></label><input type="password" id="wecomWebhookInput" autocomplete="new-password"></div>
+                </details>
+                <button class="btn" id="saveNotificationsBtn" type="button">保存通知设置</button>
+                <div class="test-buttons">
+                    <button class="text-button" type="button" data-test-channel="email">测试邮箱</button>
+                    <button class="text-button" type="button" data-test-channel="feishu">测试飞书</button>
+                    <button class="text-button" type="button" data-test-channel="wecom">测试企业微信</button>
+                </div>
+            </section>
+            <section class="settings-section mcp-settings">
+                <h3><span>[04]</span> AI 客户端接入（MCP）</h3>
+                <p>创建与当前账号绑定的凭证，让 AI 直接提交建模。有效期 90 天，可随时撤销；完成后通知此账号配置的飞书群。</p>
+                <div class="form-group">
+                    <label for="mcpTokenName">客户端名称</label>
+                    <input type="text" id="mcpTokenName" maxlength="60" placeholder="例如：我的 AI 助手">
+                </div>
+                <button class="btn" id="createMcpTokenBtn" type="button">创建接入凭证</button>
+                <div class="form-group" id="mcpTokenResult" hidden>
+                    <label for="mcpTokenValue">新凭证 <span>仅本次显示，请保存到客户端环境变量 STUDIO_TOKEN</span></label>
+                    <input id="mcpTokenValue" type="password" readonly autocomplete="off">
+                    <button class="text-button" id="copyMcpTokenBtn" type="button">复制凭证</button>
+                </div>
+                <p>平台地址（STUDIO_URL）：<span id="mcpPlatformUrl"></span></p>
+                <p>本机运行仓库内的 mcp/server.js，使用 stdio 连接。配置步骤见仓库 docs/mcp.md。</p>
+                <div id="mcpTokenList" aria-live="polite"></div>
+            </section>
+        </div>
+    </dialog>
+
+    <dialog class="settings-dialog" id="productionDialog">
+        <div class="dialog-head">
+            <div><span class="eyebrow">固定 Skill · 按阶段使用</span><h2>游戏制作流</h2></div>
+            <button class="btn compact" id="closeProductionBtn" type="button">关闭</button>
+        </div>
+        <div class="production-layout">
+            <section class="settings-section">
+                <h3>制作计划</h3>
+                <p>保存项目目标和各阶段规范。剧本由 AI 按规范编写；模型可提交 GPU；音频与动画生成尚待接入。</p>
+                <div class="form-group"><label for="planNameInput">计划名称</label><input type="text" id="planNameInput" maxlength="80" placeholder="例如：第一关可玩切片"></div>
+                <div class="form-group"><label for="planBriefInput">游戏目标与约束</label><textarea id="planBriefInput" maxlength="2000" placeholder="描述玩法、平台、风格、角色与场景；已确定的设定请明确写出。"></textarea></div>
+                <div class="form-group"><label for="planProfileSelect">质量档位</label><select id="planProfileSelect"><option value="xhs_mobile">移动端标准</option><option value="steam_desktop">桌面高精度</option></select></div>
+                <button class="btn" id="createProductionPlanBtn" type="button">保存并固定本计划规范</button>
+                <div class="form-group"><label for="savedPlanSelect">查看已有计划</label><select id="savedPlanSelect"><option value="">当前标准规范</option></select></div>
+                <button class="text-button" id="downloadProductionPlanBtn" type="button" disabled>下载计划与 Skill 快照</button>
+            </section>
+            <section class="settings-section">
+                <h3>制作阶段</h3>
+                <div id="productionStages"></div>
+                <p id="productionPlanNotice">选择阶段查看固定规范。</p>
+                <div class="production-guide" id="productionGuide"></div>
+                <button class="text-button" id="copyProductionGuideBtn" type="button" disabled>复制本阶段规范给 AI</button>
+            </section>
+        </div>
+    </dialog>
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+    <script src="auth.js"></script>
+    <script src="main.js"></script>
+    <script src="production.js"></script>
+</body>
+</html>

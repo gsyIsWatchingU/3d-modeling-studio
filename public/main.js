@@ -529,6 +529,7 @@ async function retryActiveJob() {
         await api(`/jobs/${encodeURIComponent(state.activeJobId)}/retry`, { method: 'POST' });
         showToast('任务已重新进入队列');
         await loadJobs();
+        if (new URLSearchParams(location.search).get('settings') === '1') document.getElementById('openSettingsBtn').click();
     } catch (error) { showToast(error.message, true); }
 }
 
@@ -709,7 +710,7 @@ async function init() {
     bindEvents();
     try {
         await reloadBootstrap();
-        await loadProductionPlans();
+        await loadProductionPlans(new URLSearchParams(location.search).get('plan') || '');
         await loadJobs();
     } catch (error) {
         showToast(`初始化失败：${error.message}`, true);

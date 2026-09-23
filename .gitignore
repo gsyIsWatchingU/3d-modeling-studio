@@ -30,5 +30,10 @@ Thumbs.db
 .deploy-tmp/
 run/
 
+# 本地工作与验证目录（不进仓库）
+.codex/
+.codex-test/
+artifacts/
+
 # WorkBuddy 发布应用标记文件（本地 artifact 追踪，不进仓库）
 .wbapp_*.genie

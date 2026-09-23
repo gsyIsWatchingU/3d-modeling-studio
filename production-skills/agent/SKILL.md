@@ -21,10 +21,12 @@ description: 按固定规范编写游戏策划、剧本和分镜，设计角色�
 
 保留用户的引擎、平台、风格与原有工程。涉及《川流不息》时同时读取已安装的 chuanliu-creative-direction 及其对应领域参考；通用规范不覆盖该游戏的正史、风格、GPU 生产限制或人工 approved 门禁。
 
-若已连接建模平台 MCP，先用 list_production_plans 找已有计划；需要新计划时用 create_production_plan 保存目标和规范版本，再用 get_production_guide 读取对应计划的完整 Skill。MCP 提交模型时带 production_plan_id，平台会自动注入固定建模规范及计划目标。具体工具以客户端当前实际提供的列表为准。
+若已连接游戏工厂 MCP，先用 get_factory_capabilities 确认实际产线，再用 list_game_projects 查找项目。浏览器俯视探索游戏使用 create_game_project → start_game_production → get_game_project → get_game_artifacts / export_game；任务异步执行，超时重试复用 request_key。网站与 MCP 共享任务、版本和产物。完整生产可生成策划、剧本、矢量美术、程序合成声音、运行时动画与可玩工程；不要把这些说成扩散原画、骨骼动画或模型配音。
+
+独立创作仍用 list_production_plans、create_production_plan、get_production_guide 读取固定规范。3D 资产用 get_game_model_plan 取得关联计划，再通过 create_model 提交并带 production_plan_id。3D 资产不自动进入当前 2D 探索引擎。具体工具以客户端当前实际提供的列表为准。
 
 未连接 MCP 时按本地参考继续编写文本、规格和交接文档。不得因 Skill 已安装就声称 GPU、音频、绑定或引擎服务可调用；先核实实际工具。没有执行后端时交付可用的设计稿和生产规格，明确指出缺失能力，不伪造输出文件或完成状态。
 
-剧本、音效提示词、动作规格可由当前 AI 编写；音频和动画文件必须通过可用的生产工具生成并验收。建模网站当前只执行静态 3D 建模，音频生成、绑定动画、引擎集成未通过该网站执行。
+生成完成后检查实际文件、自动检查报告和试玩结果。人工验收在网站完成，模型不得替代用户标记 approved。仅在用户明确要求公开时调用 publish_game；尚未批准时交付私有试玩与工程。未接入的游戏类型、原画、配音或引擎能力如实说明，不能把当前探索引擎包装成任意游戏生产能力。
 
 每个阶段保留相同场景/资产/事件 ID，说明输入、输出、依赖和验证状态。正文与来源快照在 references；sources.lock.json 记录来源提交、MIT 许可及哈希。上游原文仅供追溯，实际使用的是经适配的中文规范，不执行 vendor 内的任何代码。

@@ -1,0 +1,19 @@
+{
+  "title": "灯塔来信",
+  "tagline": "找回光晶，照亮归途。",
+  "story": "守灯人在退潮的岛屿寻找两枚光晶，听取修灯师的指引，恢复灯塔。",
+  "goal": "收集两枚光晶，穿过出口。",
+  "ending": "灯塔亮起，远方的船回应了你的信号。",
+  "palette": { "background": "#142332", "floor": "#243846", "wall": "#486171", "accent": "#f3c778" },
+  "player": { "name": "守灯人", "description": "披着金黄斗篷的年轻守灯人。", "color": "#f3c778", "shape": "hood" },
+  "collectible": { "name": "光晶", "description": "为灯塔充能。", "color": "#84dcc6" },
+  "rules": { "lives": 3, "speed": 3.5 },
+  "levels": [{
+    "id": "L1", "name": "退潮岛", "description": "石墙围绕的静谧港湾。", "intro": "修灯师在东侧等你。",
+    "background": "#142332", "spawn": { "x": 2, "y": 5 }, "exit": { "x": 17, "y": 5 },
+    "walls": [{ "x": 9, "y": 3 }], "items": [{ "x": 4, "y": 5 }, { "x": 7, "y": 5 }],
+    "hazards": [{ "x": 10, "y": 8, "axis": "x", "range": 2 }],
+    "npc": { "x": 6, "y": 7, "name": "修灯师", "dialogue": "把光晶带往东侧灯门。", "choices": [{ "label": "光晶在哪？", "response": "发光的晶体散落在主路上。" }] }
+  }],
+  "audio": { "mood": "安静的夜航，清亮的提示音。", "collect_hz": 660, "danger_hz": 110, "win_hz": 880 }
+}

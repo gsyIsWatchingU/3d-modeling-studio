@@ -29,6 +29,8 @@ const { getEffectiveConfig, getChannelStatus, sendChannel, startNotificationWork
 const { createAuthRouter, requireUser, requireModelUser, localUserResponse } = require('./auth');
 const { createProductionRouter } = require('./production');
 const { getCatalog, modelingSkills } = require('./production-skills');
+const { createFactoryRouter } = require('./factory');
+const { startFactoryWorker } = require('./factory-worker');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -52,6 +54,7 @@ app.use((req, res, next) => {
 // 统一账号认证：/auth/*、/me、/logout
 app.use(createAuthRouter());
 app.use('/api/production', createProductionRouter());
+app.use('/api/factory', createFactoryRouter());
 app.use('/vendor/three', express.static(path.join(__dirname, '..', 'node_modules', 'three')));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use('/models', requireModelUser, (req, res, next) => {
@@ -399,6 +402,7 @@ app.use((error, req, res, next) => {
 
 const notificationWorker = startNotificationWorker();
 const modelWorker = startModelWorker();
+const factoryWorker = startFactoryWorker();
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`3D 建模工作室已启动，端口 ${PORT}`);
@@ -408,5 +412,6 @@ app.listen(PORT, '0.0.0.0', () => {
 process.on('SIGTERM', () => {
     modelWorker.stop();
     notificationWorker.stop();
+    factoryWorker.stop();
     process.exit(0);
 });

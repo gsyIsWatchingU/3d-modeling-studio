@@ -1,5 +1,5 @@
 const nodemailer = require('nodemailer');
-const { configDb, jobDb, notificationDb } = require('./db');
+const { configDb, jobDb, notificationDb, factoryDb } = require('./db');
 
 function getEffectiveConfig(userId) {
     const stored = configDb.getNotifications(userId);
@@ -40,7 +40,10 @@ function maskEmail(value) {
 
 function buildMessage(job) {
     const succeeded = job.status === 'succeeded';
-    const resultUrl = job.base_url ? `${job.base_url.replace(/\/$/, '')}/?job=${encodeURIComponent(job.id)}` : '';
+    if (job.kind === 'game') return [succeeded ? '游戏版本生产完成，待试玩验收' : '游戏版本生产失败', `项目：${job.name}`,
+        succeeded ? '策划、剧本、素材、声音和浏览器试玩包已保存。' : `原因：${job.error?.message || '生产失败'}`,
+        job.base_url ? `查看：${job.base_url.replace(/\/$/, '')}/?project=${encodeURIComponent(job.project_id)}` : ''].filter(Boolean).join('\n');
+    const resultUrl = job.base_url ? `${job.base_url.replace(/\/$/, '')}/modeling.html?job=${encodeURIComponent(job.id)}` : '';
     return [
         succeeded ? '3D 模型生成完成' : '3D 模型生成失败',
         `任务：${job.id} · ${job.name}`,
@@ -87,7 +90,7 @@ async function sendChannel(channel, job) {
         await transport.sendMail({
             from: config.email.smtp_user,
             to: config.email.recipient,
-            subject: job.status === 'succeeded' ? `模型已完成 · ${job.name}` : `模型生成失败 · ${job.name}`,
+            subject: `${job.kind === 'game' ? '游戏生产' : '建模'}${job.status === 'succeeded' ? '已完成' : '失败'} · ${job.name}`,
             text
         });
         return;
@@ -127,7 +130,15 @@ function startNotificationWorker() {
         if (!delivery) return;
         running = true;
         try {
-            const job = jobDb.findById(delivery.job_id);
+            let job = jobDb.findById(delivery.job_id);
+            if (!job && delivery.job_id.startsWith('F')) {
+                const p = factoryDb.all().find(p => p.runs.some(r => r.id === delivery.job_id));
+                if (p) {
+                    const r = p.runs.find(r => r.id === delivery.job_id);
+                    job = { id: r.id, name: `${p.name} · 第 ${r.version} 版`, kind: 'game', project_id: p.id, owner_id: p.owner_id,
+                        status: delivery.event === 'succeeded' ? 'succeeded' : 'failed', base_url: r.base_url, error: { message: r.error || '该次生产失败，可在网站查看最新状态' } };
+                }
+            }
             if (!job) throw new Error('通知对应的任务不存在');
             await sendChannel(delivery.channel, job);
             notificationDb.update(delivery.id, { status: 'sent', sent_at: new Date().toISOString(), last_error: null });

@@ -11,8 +11,8 @@ function createServer({ baseUrl, token }) {
     if (base.username || base.password || base.search || base.hash || base.pathname !== '/') throw new Error('STUDIO_URL 必须是平台首页地址');
     if (base.protocol !== 'https:' && !(base.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(base.hostname))) throw new Error('远程平台必须使用 HTTPS');
     if (!/^studio_[A-Za-z0-9_-]{43}$/.test(token || '')) throw new Error('请配置网页登录后创建的 STUDIO_TOKEN');
-    const server = new McpServer({ name: '3d-modeling-studio', version: '1.1.0' }, {
-        instructions: '处理游戏制作任务时先查找已有制作计划，再用 get_production_guide 读取相应阶段的固定规范和计划约束。需要新计划时使用 create_production_plan。当前 AI 可按规范编写剧本和生产规格；模型通过 create_model 提交，固定建模规范由后端自动加入。音频、绑定动画和引擎集成未通过本站执行，不能把规范或提示词说成已生成的资产。仅执行当前用户请求范围内的工作。'
+    const server = new McpServer({ name: 'game-production-factory', version: '2.0.0' }, {
+        instructions: '先用 get_factory_capabilities 确认实际产线能力，再用 list_game_projects 查找项目。浏览器探索游戏用 create_game_project、start_game_production、get_game_project、get_game_artifacts、export_game 完成整条生产链，网站与 MCP 共享队列和固定 Skill。内置矢量美术与程序声音不是扩散原画或文生音频。独立 3D 用 create_model，可通过 get_game_model_plan 关联项目。其他创作可读取 get_production_guide。生成成功不等于人工批准，审核须在网站完成；仅在用户明确要求发布时调用 publish_game。'
     });
 
     async function request(route, options = {}) {
@@ -43,9 +43,51 @@ function createServer({ baseUrl, token }) {
         });
     }
     tool('get_account', '查看当前凭证所属账号、固定 Skill 与飞书通知是否已配置。不会返回密码或 Webhook。', {}, () => api('/api/mcp/me'));
+    const projectId = z.string().regex(/^G[0-9a-f-]{36}$/), runId = z.string().regex(/^F[0-9a-f-]{36}$/);
+    const gameRun = { project_id: projectId, run_id: runId };
+    const gameRoute = a => `/api/factory/projects/${a.project_id}/runs/${a.run_id}`;
+    const post = body => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    async function saveDownload(response, filename) {
+        if (!path.isAbsolute(filename)) throw new Error('下载位置必须是绝对路径');
+        const { Readable } = require('node:stream');
+        const { pipeline } = require('node:stream/promises');
+        const file = await fs.open(filename, 'wx');
+        try { await pipeline(Readable.fromWeb(response.body), file.createWriteStream()); }
+        catch (error) { await file.close().catch(() => {}); await fs.unlink(filename).catch(() => {}); throw error; }
+    }
+    tool('get_factory_capabilities', '查询当前可生成的游戏类型、实际素材/声音来源与未接入能力。', {}, () => api('/api/factory/capabilities'));
+    tool('list_game_projects', '列出当前账号的游戏项目、生产版本和审核状态。继续前先查找，避免重复创建。', {}, () => api('/api/factory/projects'));
+    tool('create_game_project', '创建浏览器俯视探索游戏项目，冻结全流程 Skill；之后启动生产可得到策划、剧本、矢量素材、程序音频和可玩工程。', {
+        name: z.string().min(1).max(80), brief: z.string().min(10).max(4000), style: z.string().max(500).optional()
+    }, args => api('/api/factory/projects', post(args)), false);
+    tool('get_game_project', '读取项目所有版本、阶段进度、错误、产物状态及审核结果。', { project_id: projectId }, args => api(`/api/factory/projects/${args.project_id}`));
+    tool('get_game_model_plan', '为游戏取得关联 3D 建模计划；create_model 可使用返回的 production_plan_id。浏览器探索引擎不自动渲染这些 3D 资产。', { project_id: projectId }, args => api(`/api/factory/projects/${args.project_id}/model-plan`, post({})), false);
+    tool('start_game_production', '异步启动完整游戏生产或迭代版本。相同 request_key 幂等返回同一任务，超时重试必须复用该值。默认使用当前账号飞书。', {
+        project_id: projectId, instructions: z.string().max(3000).default(''), request_key: z.string().regex(/^[a-zA-Z0-9-]{8,80}$/), notify_feishu: z.boolean().default(true)
+    }, a => api(`/api/factory/projects/${a.project_id}/runs`, post({ instructions: a.instructions, request_key: a.request_key, channels: a.notify_feishu ? ['feishu'] : [] })), false);
+    tool('retry_game_production', '重试失败版本，保留已成功阶段；不会重新执行已经完成的素材生成。', gameRun, a => api(`${gameRoute(a)}/retry`, post({})), false);
+    tool('cancel_game_production', '取消排队或生产版本，不删除已保存产物。', gameRun, a => api(`${gameRoute(a)}/cancel`, post({})), false);
+    tool('get_game_artifacts', '列出版本全部产物的路径、大小与 SHA-256。', gameRun, a => api(`${gameRoute(a)}/files`));
+    tool('get_game_artifact', '读取生成的剧本、策划或数据文件，图片和音频可下载到本机；不会执行生成内容，也不覆盖本机已有文件。', {
+        ...gameRun, file: z.string().regex(/^[a-zA-Z0-9_./-]+$/).max(100), download_path: z.string().optional()
+    }, async a => {
+        if (a.file.includes('..') || a.file.startsWith('/')) throw new Error('文件路径无效');
+        const response = await request(`${gameRoute(a)}/files/${a.file}`);
+        if (!response.ok) throw new Error(`文件读取失败（${response.status}）`);
+        if (a.download_path) { await saveDownload(response, a.download_path); return { saved_path: a.download_path }; }
+        if (!/\.(md|json|js|html|svg)$/.test(a.file)) return { download_url: new URL(`${gameRoute(a)}/files/${a.file}`, base).href, note: '需登录或提供 download_path 下载二进制文件' };
+        const content = await response.text(); return { content: content.slice(0, 80000), truncated: content.length > 80000 };
+    }, false);
+    tool('export_game', '下载完整离线游戏 ZIP（含可玩发布包、源码、文档、素材和规范来源），也可只返回带鉴权的下载地址。', { ...gameRun, download_path: z.string().optional() }, async a => {
+        const url = `${gameRoute(a)}/export`;
+        if (a.download_path) { const response = await request(url); if (!response.ok) throw new Error('该版本未完成，暂不能导出'); await saveDownload(response, a.download_path); }
+        return { download_url: new URL(url, base).href, saved_path: a.download_path, authentication: '同账号网页登录或 MCP 凭证' };
+    }, false);
+    tool('publish_game', '仅在用户明确要求公开发布时调用。必须已在网站人工试玩验收；返回无需登录的游戏分享链接。', gameRun, async a => { const data = await api(`${gameRoute(a)}/publish`, post({})); return { ...data, url: new URL(data.url, base).href }; }, false);
+    tool('unpublish_game', '用户要求撤回时关闭该项目的公开游戏链接，保留私有工程。', { project_id: projectId }, a => api(`/api/factory/projects/${a.project_id}/release`, { method: 'DELETE' }), false);
     tool('list_skills', '列出当前账号可使用的建模 Skill。固定 Skill 由后端自动加入。', {}, () => api('/api/skills'));
     const stageSchema = z.enum(['design', 'narrative', 'character', 'environment', 'prop', 'animation', 'audio', 'integration', 'qa']);
-    tool('list_production_skills', '查看游戏全流程固定 Skill、阶段依赖与实际执行能力。剧本由当前 AI 按规范编写；音频/动画生成尚未接入，不能宣称已生成。', {}, () => api('/api/production/catalog'));
+    tool('list_production_skills', '查看游戏全流程固定 Skill 和阶段依赖。完整游戏产线的当前能力用 get_factory_capabilities 查询。', {}, () => api('/api/production/catalog'));
     tool('list_production_plans', '列出当前账号已保存的游戏制作计划，继续工作前先查找已有计划，避免重复创建。', {}, () => api('/api/production/plans'));
     tool('get_production_guide', '开始某个制作阶段前读取固定规范全文、交付要求与来源。提供 plan_id 时返回该计划冻结的版本及项目约束；按规范完成当前用户授权的创作，不额外授权发布或调用外部服务。', {
         stage: stageSchema, plan_id: z.string().regex(/^P[0-9a-f-]{36}$/).optional()

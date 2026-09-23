@@ -36,6 +36,7 @@ function initialData() {
         sessions: [],
         api_tokens: [],
         production_plans: [],
+        factory_projects: [],
         user_notifications: {},
         settings: { default_skill_ids: [BUILTIN_SKILL.id], default_skill_id: BUILTIN_SKILL.id },
         user_settings: {},
@@ -64,6 +65,7 @@ function normalizeDb(raw) {
     db.sessions = Array.isArray(db.sessions) ? db.sessions : [];
     db.api_tokens = Array.isArray(db.api_tokens) ? db.api_tokens : [];
     db.production_plans = Array.isArray(db.production_plans) ? db.production_plans : [];
+    db.factory_projects = Array.isArray(db.factory_projects) ? db.factory_projects : [];
     db.user_notifications = db.user_notifications && typeof db.user_notifications === 'object' ? db.user_notifications : {};
     db.user_settings = db.user_settings && typeof db.user_settings === 'object' ? db.user_settings : {};
     if (!db.skills.some(skill => skill.id === BUILTIN_SKILL.id)) db.skills.unshift(BUILTIN_SKILL);
@@ -440,6 +442,30 @@ const productionPlanDb = {
     }
 };
 
+// 工厂状态与原有账号/任务共用原子存储；生成文件单独保存，避免放大业务数据库。
+const factoryDb = {
+    list(userId) { return clone(readDb().factory_projects.filter(p => p.owner_id === userId).reverse()); },
+    all() { return clone(readDb().factory_projects); },
+    get(id, userId) { return clone(readDb().factory_projects.find(p => p.id === id && p.owner_id === userId) || null); },
+    create(data, userId) {
+        return mutate(db => {
+            if (db.factory_projects.filter(p => p.owner_id === userId).length >= 40) throw new Error('每个账号最多保存 40 个游戏项目');
+            const now = new Date().toISOString();
+            const project = { ...clone(data), id: `G${crypto.randomUUID()}`, owner_id: userId, runs: [], created_at: now, updated_at: now };
+            db.factory_projects.push(project); return clone(project);
+        });
+    },
+    change(id, userId, fn) {
+        return mutate(db => {
+            const project = db.factory_projects.find(p => p.id === id && p.owner_id === userId);
+            if (!project) throw new Error('游戏项目不存在');
+            fn(project, db.factory_projects);
+            project.updated_at = new Date().toISOString();
+            return clone(project);
+        });
+    }
+};
+
 const notificationDb = {
     enqueue(data) {
         return mutate(db => {
@@ -552,6 +578,7 @@ module.exports = {
     sessionDb,
     apiTokenDb,
     productionPlanDb,
+    factoryDb,
     getStats,
     dbPath,
     uploadDir,

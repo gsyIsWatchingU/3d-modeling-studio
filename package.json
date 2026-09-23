@@ -1,12 +1,12 @@
 {
   "name": "3d-modeling-studio",
   "version": "1.0.0",
-  "description": "多参考图、Skill 快照、异步 Forge3D 建模与结果通知工作台。",
+  "description": "一站式浏览器游戏生产工厂与 GPU 3D 建模工作台。",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
     "dev": "node server/index.js",
-    "check": "node --check server/index.js && node --check server/db.js && node --check server/utils.js && node --check server/image-board.js && node --check server/model-worker.js && node --check server/skill-plan.js && node --check server/notifier.js && node --check server/auth.js && node --check public/main.js && node --check public/auth.js && node --check mcp/server.js && node --check server/production.js && node --check server/production-skills.js && node --check public/production.js && node --check scripts/install-production-skill.js",
+    "check": "node --check server/index.js && node --check server/db.js && node --check server/utils.js && node --check server/image-board.js && node --check server/model-worker.js && node --check server/skill-plan.js && node --check server/notifier.js && node --check server/auth.js && node --check public/main.js && node --check public/auth.js && node --check mcp/server.js && node --check server/production.js && node --check server/production-skills.js && node --check public/production.js && node --check scripts/install-production-skill.js && node --check server/factory.js && node --check server/factory-worker.js && node --check server/factory-spec.js && node --check server/factory-build.js && node --check public/factory.js && node --check public/game-runtime.js",
     "test": "node --test",
     "mcp": "node mcp/server.js"
   },
@@ -16,6 +16,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
     "express": "^5.2.1",
+    "fflate": "^0.8.3",
     "multer": "^2.4.0",
     "nodemailer": "^10.0.10",
     "sharp": "^0.35.4",
