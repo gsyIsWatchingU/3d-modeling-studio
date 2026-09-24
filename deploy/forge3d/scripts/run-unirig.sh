@@ -26,5 +26,6 @@ exec "$python_bin" "$FORGE3D_PROJECT_ROOT/scripts/unirig_generate.py" \
   --python "$python_bin" \
   --blender "${FORGE3D_BLENDER:-/workspace/.tools/blender/blender}" \
   --rig-repairer "$FORGE3D_PROJECT_ROOT/blender/repair_rig_symmetry.py" \
+  --skin-sanitizer "$FORGE3D_PROJECT_ROOT/blender/sanitize_skin_weights.py" \
   --rig-analyzer "$FORGE3D_PROJECT_ROOT/blender/analyze_rig_structure.py" \
   --rig-limits-json "$rig_limits_json"

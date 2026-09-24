@@ -25,6 +25,7 @@ def main() -> None:
     parser.add_argument("--python", required=True)
     parser.add_argument("--blender", required=True)
     parser.add_argument("--rig-repairer", required=True)
+    parser.add_argument("--skin-sanitizer", required=True)
     parser.add_argument("--rig-analyzer", required=True)
     parser.add_argument("--rig-limits-json", default="{}")
     parser.add_argument("--skeleton-only", action="store_true")
@@ -37,6 +38,8 @@ def main() -> None:
     repair_report = output.with_suffix(".skeleton-repair.json")
     skeleton_report = output.with_suffix(".skeleton-qc.json")
     skin = output.with_suffix(".skin.fbx")
+    sanitized_output = output.with_suffix(".sanitized.glb")
+    skin_report = output.with_suffix(".skin-sanitize.json")
     work = output.parent / f".{output.stem}-unirig"
     skeleton_npz = work / "skeleton"
     skin_npz = work / "skin"
@@ -91,6 +94,12 @@ def main() -> None:
         "--num_runs=1", "--id=0", f"--source={skin}", f"--target={args.input}",
         f"--output={output}",
     ], cwd=repo, env=env, expected=output)
+    run([
+        args.blender, "--background", "--python-exit-code", "1", "--python",
+        args.skin_sanitizer, "--", "--input", str(output), "--output",
+        str(sanitized_output), "--report", str(skin_report),
+    ], cwd=repo, env=env, expected=sanitized_output)
+    os.replace(sanitized_output, output)
 
 
 if __name__ == "__main__":

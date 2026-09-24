@@ -54,6 +54,14 @@ def bounds(points: list[Vector]) -> tuple[float, float, float]:
     )
 
 
+def vertex_weights(obj: bpy.types.Object, index: int) -> list[dict[str, float | str]]:
+    groups = {group.index: group.name for group in obj.vertex_groups}
+    return [
+        {"bone": groups.get(item.group, str(item.group)), "weight": round(item.weight, 6)}
+        for item in sorted(obj.data.vertices[index].groups, key=lambda value: value.weight, reverse=True)
+    ]
+
+
 def main() -> None:
     args = parse_args()
     source = Path(args.input).resolve()
@@ -100,6 +108,7 @@ def main() -> None:
     width_expansion = []
     depth_expansion = []
     all_stretches = []
+    worst_edges = []
     frame_reports = []
     for frame in frames:
         scene.frame_set(int(frame), subframe=frame % 1)
@@ -116,7 +125,20 @@ def main() -> None:
                 rest_length = (rest[first] - rest[second]).length
                 if rest_length <= 1e-7:
                     continue
-                frame_stretches.append((current[first] - current[second]).length / rest_length)
+                stretch = (current[first] - current[second]).length / rest_length
+                frame_stretches.append(stretch)
+                if len(worst_edges) < 16 or stretch > worst_edges[-1]["stretch_ratio"]:
+                    worst_edges.append({
+                        "object": obj.name,
+                        "frame": round(frame, 3),
+                        "vertices": [first, second],
+                        "rest_length": round(rest_length, 8),
+                        "posed_length": round((current[first] - current[second]).length, 8),
+                        "stretch_ratio": round(stretch, 5),
+                        "weights": [vertex_weights(obj, first), vertex_weights(obj, second)],
+                    })
+                    worst_edges.sort(key=lambda item: item["stretch_ratio"], reverse=True)
+                    del worst_edges[16:]
         all_stretches.extend(frame_stretches)
         width_to_height.append(width / height)
         depth_to_height.append(depth / height)
@@ -137,6 +159,7 @@ def main() -> None:
         "asset": str(source),
         "action": action.name,
         "frames": frame_reports,
+        "worst_edges": worst_edges,
         "quality": {
             "rest_width_to_height": round(rest_width / rest_height, 5),
             "rest_depth_to_height": round(rest_depth / rest_height, 5),
