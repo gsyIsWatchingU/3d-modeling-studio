@@ -1,4 +1,4 @@
-"""清除跨越身体中线的左右大腿混合权重，避免胯部边在走路时爆拉。"""
+"""隔离左右腿蒙皮，并把胯部中线区域稳定到骨盆，避免走路时爆拉。"""
 
 from __future__ import annotations
 
@@ -24,6 +24,22 @@ def parse_args() -> argparse.Namespace:
 
 def group_weight(vertex: bpy.types.MeshVertex, group_index: int) -> float:
     return next((item.weight for item in vertex.groups if item.group == group_index), 0.0)
+
+
+def common_ancestor(first: bpy.types.Bone, second: bpy.types.Bone) -> bpy.types.Bone:
+    """Return the closest shared parent for two limb roots."""
+
+    ancestors = set()
+    current = first.parent
+    while current is not None:
+        ancestors.add(current)
+        current = current.parent
+    current = second.parent
+    while current is not None:
+        if current in ancestors:
+            return current
+        current = current.parent
+    raise RuntimeError("左右大腿没有共同骨盆祖先")
 
 
 def smooth_joint_weights(
@@ -90,9 +106,15 @@ def main() -> None:
     semantic_names = {semantic: original for original, semantic in mapping.items()}
     left_name = semantic_names["thigh_l"]
     right_name = semantic_names["thigh_r"]
+    left_bone = armature.data.bones[left_name]
+    right_bone = armature.data.bones[right_name]
+    pelvis_bone = armature.data.bones.get(semantic_names.get("pelvis", ""))
+    if pelvis_bone is None:
+        pelvis_bone = common_ancestor(left_bone, right_bone)
+    pelvis_name = pelvis_bone.name
     left_lower_names = [semantic_names[name] for name in ("calf_l", "foot_l", "ball_l")]
     right_lower_names = [semantic_names[name] for name in ("calf_r", "foot_r", "ball_r")]
-    center_x = armature.data.bones[semantic_names["pelvis"]].head_local.x if "pelvis" in semantic_names else 0.0
+    center_x = pelvis_bone.head_local.x
     points = [point for bone in armature.data.bones for point in (bone.head_local, bone.tail_local)]
     rig_height = max(point.z for point in points) - min(point.z for point in points)
     left_head_x = armature.data.bones[left_name].head_local.x
@@ -106,7 +128,8 @@ def main() -> None:
             continue
         left = obj.vertex_groups.get(left_name)
         right = obj.vertex_groups.get(right_name)
-        if left is None or right is None:
+        pelvis = obj.vertex_groups.get(pelvis_name)
+        if left is None or right is None or pelvis is None:
             continue
         left_lower = [obj.vertex_groups.get(name) for name in left_lower_names]
         right_lower = [obj.vertex_groups.get(name) for name in right_lower_names]
@@ -133,26 +156,62 @@ def main() -> None:
             elif right_lower_weight > left_lower_weight + 1e-6:
                 left_fraction = 0.0
                 assignment = "right_lower_limb"
+            elif abs(armature_x - center_x) <= blend_band:
+                # 宽松短裤和衣摆在胯部常由同一块连续网格跨过中线。
+                # 让这一小圈顶点同时跟随左右大腿，会在双腿反向摆动时把
+                # 很短的边拉成尖刺；只保留当前位置一侧的大腿，并在中线
+                # 到保护带边缘之间连续过渡到骨盆，避免形成新的硬接缝。
+                before_left = weights.get(left.index, 0.0)
+                before_right = weights.get(right.index, 0.0)
+                thigh_fraction = abs(armature_x - center_x) / blend_band
+                pelvis_weight = weights.get(pelvis.index, 0.0) + thigh_weight * (1.0 - thigh_fraction)
+                selected_weight = thigh_weight * thigh_fraction
+                selected = left if armature_x >= center_x else right
+                left.remove([vertex.index])
+                right.remove([vertex.index])
+                if selected_weight > 1e-6:
+                    selected.add([vertex.index], selected_weight, "REPLACE")
+                pelvis.add([vertex.index], pelvis_weight, "REPLACE")
+                changed.append({
+                    "object": obj.name,
+                    "vertex": vertex.index,
+                    "x": round(armature_x, 7),
+                    "left_weight_before": round(before_left, 7),
+                    "right_weight_before": round(before_right, 7),
+                    "selected_thigh": selected.name,
+                    "selected_thigh_weight_after": round(selected_weight, 7),
+                    "pelvis_weight_after": round(pelvis_weight, 7),
+                    "assignment": "pelvis_center_blend",
+                })
+                continue
             else:
-                left_fraction = max(0.0, min(1.0, 0.5 + (armature_x - center_x) / (2.0 * blend_band)))
-                assignment = "center_blend"
+                # 中线保护带外按骨架实际左右方向硬隔离。这里不能继续做
+                # 左右大腿混合，否则相邻顶点会被两条腿向相反方向牵引。
+                left_fraction = 1.0 if armature_x > center_x else 0.0
+                assignment = "left_by_position" if left_fraction else "right_by_position"
             right_fraction = 1.0 - left_fraction
+            before_left = weights.get(left.index, 0.0)
+            before_right = weights.get(right.index, 0.0)
+            after_left = thigh_weight * left_fraction
+            after_right = thigh_weight * right_fraction
+            if abs(after_left - before_left) <= 1e-7 and abs(after_right - before_right) <= 1e-7:
+                continue
             changed.append({
                 "object": obj.name,
                 "vertex": vertex.index,
                 "x": round(armature_x, 7),
-                "left_weight_before": round(weights.get(left.index, 0.0), 7),
-                "right_weight_before": round(weights.get(right.index, 0.0), 7),
-                "left_weight_after": round(thigh_weight * left_fraction, 7),
-                "right_weight_after": round(thigh_weight * right_fraction, 7),
+                "left_weight_before": round(before_left, 7),
+                "right_weight_before": round(before_right, 7),
+                "left_weight_after": round(after_left, 7),
+                "right_weight_after": round(after_right, 7),
                 "assignment": assignment,
             })
             left.remove([vertex.index])
             right.remove([vertex.index])
             if left_fraction > 1e-6:
-                left.add([vertex.index], thigh_weight * left_fraction, "REPLACE")
+                left.add([vertex.index], after_left, "REPLACE")
             if right_fraction > 1e-6:
-                right.add([vertex.index], thigh_weight * right_fraction, "REPLACE")
+                right.add([vertex.index], after_right, "REPLACE")
         for side in ("l", "r"):
             thigh = obj.vertex_groups.get(semantic_names[f"thigh_{side}"])
             calf = obj.vertex_groups.get(semantic_names[f"calf_{side}"])
