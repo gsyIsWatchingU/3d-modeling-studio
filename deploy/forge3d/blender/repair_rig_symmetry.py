@@ -60,7 +60,7 @@ def semantic_mapping(armature: bpy.types.Object) -> dict[str, str]:
         raise RuntimeError("没有识别到双臂")
 
     center_x = root.head_local.x
-    mapping: dict[str, str] = {}
+    mapping: dict[str, str] = {root.name: "pelvis"}
     for start in arm_starts:
         side = "l" if start.tail_local.x > center_x else "r"
         names = [

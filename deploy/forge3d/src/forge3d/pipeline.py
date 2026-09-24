@@ -256,6 +256,16 @@ class PipelineRunner:
                 job.profile,
             ]
             self._run_command(command, job)
+            stabilization_report = self.store.job_dir(job.job_id) / "locomotion-stabilize.json"
+            command = [
+                os.environ.get("FORGE3D_BLENDER", "/workspace/.tools/blender/blender"),
+                "--background", "--python-exit-code", "1", "--python",
+                str(self.settings.project_root / "blender" / "stabilize_locomotion.py"),
+                "--", "--input", str(output), "--output", str(output),
+                "--report", str(stabilization_report),
+            ]
+            self._run_command(command, job)
+            job.outputs["locomotion_stabilization_report"] = str(stabilization_report)
         self._require_output(output)
         job.outputs["animated_source"] = str(output)
         details = {"output": str(output)}

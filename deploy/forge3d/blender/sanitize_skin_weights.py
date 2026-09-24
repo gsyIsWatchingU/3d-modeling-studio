@@ -19,7 +19,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--report", required=True)
-    parser.add_argument("--center-band-ratio", type=float, default=0.001)
     return parser.parse_args(args)
 
 
@@ -44,7 +43,9 @@ def main() -> None:
     center_x = armature.data.bones[semantic_names["pelvis"]].head_local.x if "pelvis" in semantic_names else 0.0
     points = [point for bone in armature.data.bones for point in (bone.head_local, bone.tail_local)]
     rig_height = max(point.z for point in points) - min(point.z for point in points)
-    center_band = max(rig_height * args.center_band_ratio, 1e-6)
+    left_head_x = armature.data.bones[left_name].head_local.x
+    right_head_x = armature.data.bones[right_name].head_local.x
+    blend_band = max(min(abs(left_head_x - center_x), abs(right_head_x - center_x)), rig_height * 0.02)
     changed: list[dict[str, object]] = []
 
     for obj in bpy.context.scene.objects:
@@ -60,24 +61,26 @@ def main() -> None:
             if left.index not in weights and right.index not in weights:
                 continue
             armature_x = (mesh_to_armature @ vertex.co).x
-            if abs(armature_x - center_x) <= center_band:
-                continue
-            keep = left if armature_x > center_x else right
-            remove = right if keep == left else left
             thigh_weight = weights.get(left.index, 0.0) + weights.get(right.index, 0.0)
             if thigh_weight <= 0:
                 continue
+            left_fraction = max(0.0, min(1.0, 0.5 + (armature_x - center_x) / (2.0 * blend_band)))
+            right_fraction = 1.0 - left_fraction
             changed.append({
                 "object": obj.name,
                 "vertex": vertex.index,
                 "x": round(armature_x, 7),
-                "kept": keep.name,
-                "removed": remove.name,
-                "removed_weight": round(weights.get(remove.index, 0.0), 7),
+                "left_weight_before": round(weights.get(left.index, 0.0), 7),
+                "right_weight_before": round(weights.get(right.index, 0.0), 7),
+                "left_weight_after": round(thigh_weight * left_fraction, 7),
+                "right_weight_after": round(thigh_weight * right_fraction, 7),
             })
             left.remove([vertex.index])
             right.remove([vertex.index])
-            keep.add([vertex.index], thigh_weight, "REPLACE")
+            if left_fraction > 1e-6:
+                left.add([vertex.index], thigh_weight * left_fraction, "REPLACE")
+            if right_fraction > 1e-6:
+                right.add([vertex.index], thigh_weight * right_fraction, "REPLACE")
         if changed:
             bpy.context.view_layer.objects.active = obj
             obj.select_set(True)
@@ -97,7 +100,7 @@ def main() -> None:
             "source": str(source),
             "output": str(output),
             "center_x": round(center_x, 7),
-            "center_band": round(center_band, 7),
+            "blend_band": round(blend_band, 7),
             "changed_vertex_count": len(changed),
             "changes": changed,
         }, ensure_ascii=False, indent=2) + "\n",
