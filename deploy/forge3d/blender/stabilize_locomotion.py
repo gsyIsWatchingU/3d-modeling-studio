@@ -12,8 +12,8 @@ from mathutils import Quaternion
 
 
 ACTION_FACTORS = {
-    "walk_loop": 0.88,
-    "walk_formal_loop": 0.88,
+    "walk_loop": 0.50,
+    "walk_formal_loop": 0.50,
     "run_loop": 0.92,
     "sprint_loop": 0.92,
     "crouch_walk_loop": 0.92,
