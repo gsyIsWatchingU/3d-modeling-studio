@@ -24,6 +24,7 @@ def main() -> None:
     parser.add_argument("--output", required=True)
     parser.add_argument("--python", required=True)
     parser.add_argument("--blender", required=True)
+    parser.add_argument("--rig-repairer", required=True)
     parser.add_argument("--rig-analyzer", required=True)
     parser.add_argument("--rig-limits-json", default="{}")
     parser.add_argument("--skeleton-only", action="store_true")
@@ -32,6 +33,8 @@ def main() -> None:
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     skeleton = output.with_suffix(".skeleton.fbx")
+    repaired_skeleton = output.with_suffix(".skeleton-repaired.fbx")
+    repair_report = output.with_suffix(".skeleton-repair.json")
     skeleton_report = output.with_suffix(".skeleton-qc.json")
     skin = output.with_suffix(".skin.fbx")
     work = output.parent / f".{output.stem}-unirig"
@@ -62,7 +65,12 @@ def main() -> None:
     ], cwd=repo, env=env, expected=skeleton)
     run([
         args.blender, "--background", "--python-exit-code", "1", "--python",
-        args.rig_analyzer, "--", "--input", str(skeleton), "--output",
+        args.rig_repairer, "--", "--input", str(skeleton), "--output",
+        str(repaired_skeleton), "--report", str(repair_report),
+    ], cwd=repo, env=env, expected=repaired_skeleton)
+    run([
+        args.blender, "--background", "--python-exit-code", "1", "--python",
+        args.rig_analyzer, "--", "--input", str(repaired_skeleton), "--output",
         str(skeleton_report), "--rig-limits-json", args.rig_limits_json,
         "--fail-on-violation",
     ], cwd=repo, env=env, expected=skeleton_report)
@@ -70,12 +78,12 @@ def main() -> None:
         print(f"骨架探针通过: {skeleton_report}", flush=True)
         return
     run([
-        "bash", "launch/inference/extract.sh", "--input", str(skeleton),
+        "bash", "launch/inference/extract.sh", "--input", str(repaired_skeleton),
         "--output_dir", str(skin_npz), "--force_override", "true",
     ], cwd=repo, env=env)
     run([
         args.python, "run.py", "--task=configs/task/quick_inference_unirig_skin.yaml",
-        "--seed=12345", f"--input={skeleton}", f"--output={skin}",
+        "--seed=12345", f"--input={repaired_skeleton}", f"--output={skin}",
         f"--npz_dir={skin_npz}", "--data_name=raw_data.npz",
     ], cwd=repo, env=env, expected=skin)
     run([
