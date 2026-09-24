@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>模型进化 · ForgeLoop</title>
+    <link rel="icon" href="/icon.png" type="image/png">
+    <link rel="stylesheet" href="/style.css">
+    <style>
+        .evo-wrap { max-width: 1180px; margin: 0 auto; padding: 24px 20px 80px; }
+        .evo-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+        .evo-head h1 { font-size: 22px; margin: 0; }
+        .evo-head .sub { color: #8a93a6; font-size: 13px; margin-top: 4px; }
+        .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 24px; }
+        .card { background: #fff; border: 1px solid #e6e9f0; border-radius: 10px; padding: 14px 16px; }
+        .card .num { font-size: 26px; font-weight: 700; }
+        .card .lbl { color: #8a93a6; font-size: 12px; margin-top: 2px; }
+        .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+        @media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; } }
+        .panel { background: #fff; border: 1px solid #e6e9f0; border-radius: 10px; padding: 16px 18px; margin-bottom: 16px; }
+        .panel h2 { font-size: 15px; margin: 0 0 12px; }
+        .bar-row { display: flex; align-items: center; gap: 10px; margin: 6px 0; font-size: 13px; }
+        .bar-row .name { width: 96px; color: #556; flex-shrink: 0; }
+        .bar-track { flex: 1; background: #eef1f6; border-radius: 4px; height: 14px; overflow: hidden; }
+        .bar-fill { height: 100%; background: #5b8def; }
+        .bar-row .cnt { width: 32px; text-align: right; color: #556; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #eef1f6; vertical-align: top; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; background: #eef1f6; }
+        .badge.draft { background: #eef1f6; color: #667; }
+        .badge.shadow { background: #e7f0ff; color: #3b6fd6; }
+        .badge.small_scale { background: #e6f7ee; color: #1f9d58; }
+        .badge.default { background: #dcfce7; color: #15803d; }
+        .badge.rolled_back { background: #fee2e2; color: #b91c1c; }
+        .chain { border-left: 3px solid #5b8def; padding: 8px 12px; margin: 8px 0; background: #f7f9fc; border-radius: 0 8px 8px 0; font-size: 13px; }
+        .pending-item { border: 1px solid #e6e9f0; border-radius: 10px; padding: 12px 14px; margin: 10px 0; }
+        .pending-item .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        .repair-item { border-left: 3px solid #e7a13b; }
+        .reject-badge { background: #fee2e2; color: #b91c1c; }
+        .repair-form { margin-top: 8px; }
+        .recs { margin: 8px 0; font-size: 13px; }
+        .rec { border: 1px dashed #dbe1ea; border-radius: 8px; padding: 8px 10px; margin: 6px 0; background: #fbfcfe; }
+        .rec .muted { margin-top: 4px; }
+        select.var, input.val, input.reason, select.scope, select.cat, input.score, input.notes {
+            padding: 6px 8px; border: 1px solid #dbe1ea; border-radius: 8px; font-size: 13px; background: #fff;
+        }
+        .muted { color: #8a93a6; font-size: 12px; }
+        button.btn { cursor: pointer; }
+        .empty { color: #9aa3b5; padding: 12px 0; font-size: 13px; }
+        a.link { color: #3b6fd6; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <header class="app-bar">
+            <div class="brand-block">
+                <img class="app-bar-icon" src="/icon.png" alt="">
+                <span class="app-bar-title">模型进化_</span>
+                <span class="app-bar-subtitle">ForgeLoop：失败 → 修复 → 人工通过，逐步积累可复用经验</span>
+            </div>
+            <div class="header-actions">
+                <a class="btn compact" href="/modeling.html">← 回到建模工位</a>
+                <span class="user-chip" id="userChip"></span>
+                <button class="btn compact" id="logoutBtn" type="button">退出</button>
+            </div>
+        </header>
+
+        <div class="evo-wrap">
+            <div class="evo-head">
+                <div>
+                    <h1>模型进化</h1>
+                    <div class="sub">只从「有证据的因果链」学习：未通过审片的模型不进经验库；策略逐级晋级、可一键回滚。</div>
+                </div>
+                <button class="btn" id="refreshBtn" type="button">刷新</button>
+            </div>
+
+            <div class="cards" id="cards"></div>
+
+            <div class="grid2">
+                <div class="panel">
+                    <h2>失败原因分布</h2>
+                    <div id="failDist"></div>
+                </div>
+                <div class="panel">
+                    <h2>质量趋势（按月 · 人工结论）</h2>
+                    <div id="trend"></div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2>待审片队列（自动通过、待人工结论）</h2>
+                <p class="muted">在建模工位打开 GLB 旋转检查后，回来这里批准或打回；打回必须给原因与 1~5 缺陷评分。</p>
+                <div id="pending"></div>
+            </div>
+
+            <div class="panel">
+                <h2>待修复队列（自动失败或人工打回）</h2>
+                <p class="muted">每条链最多 2 次修复：复制参考图与 Skill，只修改一个白名单变量，旧 Attempt 与旧任务保持不变。</p>
+                <div id="repairable"></div>
+            </div>
+
+            <div class="panel">
+                <h2>有效因果链（失败—修复—批准）</h2>
+                <div id="chains"></div>
+            </div>
+
+            <div class="panel">
+                <h2>策略晋级与回滚</h2>
+                <p class="muted">草稿 → 影子验证 → 小范围启用 → 默认策略；只能逐级，可随时回滚。</p>
+                <div id="policies"></div>
+            </div>
+
+            <div class="panel">
+                <h2>受控实验</h2>
+                <div id="experiments"></div>
+            </div>
+        </div>
+    </div>
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+    <script src="/auth.js"></script>
+    <script src="/evolution.js"></script>
+</body>
+</html>

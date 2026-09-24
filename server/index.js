@@ -11,6 +11,7 @@ const {
     notificationDb,
     configDb,
     productionPlanDb,
+    learningDb,
     getStats,
     uploadDir,
     modelDir
@@ -28,10 +29,12 @@ const { getProviderConfig, startModelWorker } = require('./model-worker');
 const { getEffectiveConfig, getChannelStatus, sendChannel, startNotificationWorker } = require('./notifier');
 const { createAuthRouter, requireUser, requireModelUser, localUserResponse } = require('./auth');
 const { createProductionRouter } = require('./production');
+const { createLearningRouter } = require('./learning');
 const { getCatalog, modelingSkills } = require('./production-skills');
 const { createFactoryRouter } = require('./factory');
 const { startFactoryWorker } = require('./factory-worker');
 const { startStageWorker } = require('./stage-worker');
+const { backfillTerminalHistory } = require('./retrospective-worker');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -43,6 +46,8 @@ const ASSET_KINDS = ['prop', 'character', 'environment'];
 const PROFILES = ['xhs_mobile', 'steam_desktop'];
 const CHANNELS = ['email', 'feishu', 'wecom'];
 const jobSubmissionBuckets = new Map();
+// 建模 worker 启动后才可用；路由注册时仅捕获引用，请求到来时（服务已就绪）必定已赋值。
+let modelWorkerWake = null;
 
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '256kb' }));
@@ -56,6 +61,8 @@ app.use((req, res, next) => {
 app.use(createAuthRouter());
 app.use('/api/production', createProductionRouter());
 app.use('/api/factory', createFactoryRouter());
+// 修复任务通过 wake 唤醒建模 worker；modelWorkerWake 在 worker 启动后赋值。
+app.use('/api/learning', createLearningRouter({ wake: () => { if (modelWorkerWake) modelWorkerWake(); } }));
 app.use('/vendor/three', express.static(path.join(__dirname, '..', 'node_modules', 'three')));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use('/models', requireModelUser, (req, res, next) => {
@@ -343,12 +350,24 @@ app.post('/api/jobs/:id/retry', requireUser, (req, res) => {
     const job = jobDb.findById(req.params.id);
     if (!job || job.owner_id !== req.user.id) return res.status(404).json({ success: false, error: '任务不存在' });
     if (job.status !== 'failed') return res.status(400).json({ success: false, error: '只有失败任务可以重试' });
+    // ForgeLoop：允许把这次修复挂到前次失败 Attempt 上，形成因果链；只允许改一个变量。
+    let basedOn = null;
+    let changedVariable = null;
+    if (req.body?.based_on_attempt_id) {
+        basedOn = learningDb.findAttemptById(String(req.body.based_on_attempt_id));
+        if (!basedOn || basedOn.owner_id !== req.user.id) return res.status(400).json({ success: false, error: '作为依据的 Attempt 不存在' });
+        const cv = req.body?.changed_variable;
+        if (!cv || !cv.param) return res.status(400).json({ success: false, error: '修复必须显式声明「只修改的一个变量」（changed_variable.param）' });
+        changedVariable = { param: String(cv.param).slice(0, 60), from: cv.from, to: cv.to, reason: String(cv.reason || '').slice(0, 200) };
+    }
     const next = jobDb.update(job.id, {
         status: 'queued',
-        progress_message: '已重新进入队列',
+        progress_message: basedOn ? `已基于 ${basedOn.id} 的失败经验重新入队` : '已重新进入队列',
         attempt: 0,
         provider: null,
         error: null,
+        based_on_attempt_id: basedOn?.id || null,
+        changed_variable: changedVariable,
         next_run_at: new Date().toISOString()
     });
     modelWorker.wake();
@@ -403,8 +422,17 @@ app.use((error, req, res, next) => {
 
 const notificationWorker = startNotificationWorker();
 const modelWorker = startModelWorker();
+modelWorkerWake = () => modelWorker.wake();
 const factoryWorker = startFactoryWorker();
 const stageWorker = startStageWorker();
+
+// ForgeLoop 历史回填（幂等）：把已到终态但尚未记录 Attempt 的任务补记，使线上完成模型进入待审片队列。
+try {
+    const backfilled = backfillTerminalHistory();
+    if (backfilled > 0) console.log(`[ForgeLoop] 启动回填 ${backfilled} 条历史终态 Attempt`);
+} catch (error) {
+    console.error(`[ForgeLoop] 历史回填失败（不影响服务启动）: ${error.message}`);
+}
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`3D 建模工作室已启动，端口 ${PORT}`);

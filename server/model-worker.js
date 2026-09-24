@@ -3,8 +3,11 @@ const path = require('path');
 const { configDb, jobDb, modelDb, uploadDir, modelDir } = require('./db');
 const { createReferenceBoard } = require('./image-board');
 const { validateGlbBuffer } = require('./utils');
+const { hashText } = require('./utils');
 const { enqueueJobNotifications } = require('./notifier');
 const { compileSkillPlan, SkillPlanError } = require('./skill-plan');
+const { verifyRepairPlan } = require('./modeling-learning');
+const { recordTerminalAttempt } = require('./retrospective-worker');
 
 const MAX_MODEL_BYTES = 300 * 1024 * 1024;
 const FORGE_READY_STATES = new Set(['review', 'completed', 'approved', 'succeeded', 'success']);
@@ -43,6 +46,15 @@ async function submitJob(job, config) {
         jobDb.update(job.id, { progress_message: '正在解析个人 Skill 与建模要求' });
         plan = await compileSkillPlan(job);
         jobDb.update(job.id, { execution_plan: plan });
+    }
+    // ForgeLoop 修复任务：提交 GPU 前重算 SHA 并校验参考图/Skill/Profile/其余参数均未变化。
+    if (job.repair_variable) {
+        try {
+            verifyRepairPlan(plan, job.parent_plan_sha, job.repair_variable);
+        } catch (error) {
+            // 修复完整性违规是输入问题，应永久失败而非退避重试
+            throw new PermanentJobError(error.message);
+        }
     }
     const imagePaths = job.input.images.map(filename => path.join(uploadDir, path.basename(filename)));
     const boardPath = path.join(uploadDir, `reference-${job.id}.png`);
@@ -130,7 +142,22 @@ async function pollProviderJob(job, config) {
     });
     const result = await parseProviderResponse(response);
     const state = String(result.state || result.status || '').toLowerCase();
-    if (FORGE_FAILED_STATES.has(state)) throw new PermanentJobError(result.error || '远端建模任务失败');
+    if (FORGE_FAILED_STATES.has(state)) {
+        // 保留失败响应里的 QC 门禁与 metrics，供 Attempt 记录失败原因与后续修复基线
+        if (result.quality_gates || result.metrics) {
+            jobDb.update(job.id, {
+                output: {
+                    ...(job.output || {}),
+                    quality: {
+                        quality_gates: result.quality_gates || {},
+                        metrics: result.metrics || {},
+                        provider_state: state
+                    }
+                }
+            });
+        }
+        throw new PermanentJobError(result.error || '远端建模任务失败');
+    }
     const output = findOutput(result);
     if (FORGE_READY_STATES.has(state) && output) {
         jobDb.update(job.id, { status: 'downloading', progress_message: '正在保存模型文件' });
@@ -192,6 +219,8 @@ async function finishWithRemoteModel(job, source, result = {}) {
         error: null
     });
     enqueueJobNotifications(completed, 'model.succeeded');
+    // ForgeLoop：落不可变 Attempt（自动成功，等待人工审片）。best-effort。
+    recordTerminalAttempt(completed, { model, result });
 }
 
 function failOrRetry(job, error) {
@@ -206,6 +235,8 @@ function failOrRetry(job, error) {
             completed_at: new Date().toISOString()
         });
         enqueueJobNotifications(failed, 'model.failed');
+        // ForgeLoop：落不可变 Attempt 并打失败原因标签。best-effort。
+        recordTerminalAttempt(failed, { error });
         return;
     }
     jobDb.update(job.id, {
