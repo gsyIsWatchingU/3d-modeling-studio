@@ -118,6 +118,18 @@ def main() -> None:
         if semantic.rsplit("_", 1)[0] in REPAIR_PAIRS
     }
 
+    # Blender keeps connected child heads and parent tails as one joint.  Writing
+    # them bone-by-bone makes later assignments pull an already repaired joint
+    # back toward one side.  Temporarily disconnect the mirrored limb chains,
+    # repair every endpoint from the untouched snapshot, then reconnect them.
+    connected_state = {
+        original: edit_bones[original].use_connect
+        for semantic, original in semantic_names.items()
+        if semantic.rsplit("_", 1)[0] in REPAIR_PAIRS
+    }
+    for original in connected_state:
+        edit_bones[original].use_connect = False
+
     for name in REPAIR_PAIRS:
         left_name = semantic_names.get(f"{name}_l")
         right_name = semantic_names.get(f"{name}_r")
@@ -128,13 +140,16 @@ def main() -> None:
         left = edit_bones[left_name]
         right = edit_bones[right_name]
         for attr in ("head", "tail"):
-            left_point = getattr(left, attr).copy()
-            right_point = getattr(right, attr).copy()
-            lateral = (abs(left_point.x) + abs(right_point.x)) * 0.5
-            depth = (left_point.y + right_point.y) * 0.5
-            height = (left_point.z + right_point.z) * 0.5
+            left_point = before[f"{name}_l"][attr]
+            right_point = before[f"{name}_r"][attr]
+            lateral = (abs(left_point[0]) + abs(right_point[0])) * 0.5
+            depth = (left_point[1] + right_point[1]) * 0.5
+            height = (left_point[2] + right_point[2]) * 0.5
             getattr(left, attr)[:] = (lateral, depth, height)
             getattr(right, attr)[:] = (-lateral, depth, height)
+
+    for original, was_connected in connected_state.items():
+        edit_bones[original].use_connect = was_connected
 
     # UniRig 偶尔把脚骨斜向外侧。保留前后和高度，只把足部链的横向分量归零。
     for side, sign in (("l", 1.0), ("r", -1.0)):
