@@ -25,6 +25,7 @@ ACTION_ALIASES = {
     "Sprint_Loop": "sprint_loop",
     "Crouch_Idle_Loop": "crouch_idle_loop",
     "Crouch_Fwd_Loop": "crouch_walk_loop",
+    "Sitting_Idle_Loop": "sit_loop",
     "Interact": "interact",
     "Push_Loop": "push_loop",
     "Jump_Start": "jump_start",
