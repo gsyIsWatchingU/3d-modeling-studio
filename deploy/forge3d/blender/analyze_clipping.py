@@ -16,7 +16,12 @@
 """
 import argparse
 import json
+import os
 import sys
+
+# Blender 后台运行时不继承调用方 PYTHONPATH；按脚本位置注入仓库 src/，
+# 使 `import forge3d.clipping_core` 可解析（与 test_clipping.py 同一约定）。
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
 
 try:
     import bpy  # noqa: F401  (Blender 环境)
