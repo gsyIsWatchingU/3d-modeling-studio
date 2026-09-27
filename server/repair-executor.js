@@ -40,10 +40,10 @@ function sshTransport(host) {
 function buildRetargetCommand({ targetGlb, fbxPath, alias, outGlb }) {
     if (!targetGlb || !fbxPath || !alias || !outGlb) throw new Error('重定向参数不完整：需要 targetGlb/fbxPath/alias/outGlb');
     const script = path.posix.join(FORGE3D_ROOT, 'blender', 'retarget_hy.py');
+    // 参数必须与 blender 调用同一命令行（用 && 拆分会被 shell 当作独立命令执行）
     const cmd = [
         `cd ${FORGE3D_ROOT}`,
-        `${BLENDER_PATH} --background --python ${script} --`,
-        `--input ${targetGlb} --fbx ${fbxPath} --alias ${alias} --output ${outGlb}`
+        `${BLENDER_PATH} --background --python ${script} -- --input ${targetGlb} --fbx ${fbxPath} --alias ${alias} --output ${outGlb}`
     ].join(' && ');
     return { host: 'gsy013', command: cmd, script, kind: 'animation.retarget_plan' };
 }

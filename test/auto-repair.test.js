@@ -403,6 +403,9 @@ test('动画重定向/穿模门禁/音频修复命令构建与门禁报告解析
     assert.equal(retarget.host, 'gsy013');
     assert.match(retarget.command, /retarget_hy\.py/);
     assert.match(retarget.command, /--input \/workspace\/3d-assets\/char\/boy\.glb/);
+    // 参数必须与 blender 调用处于同一命令行（被 && 拆开会变成独立 shell 命令而失败）
+    assert.match(retarget.command, /blender --background --python .*retarget_hy\.py -- --input \/workspace\/3d-assets\/char\/boy\.glb --fbx \/workspace\/3d-assets\/fbx\/hang-v1\.fbx --alias hang_loop --output \/workspace\/3d-assets\/repair\/out\.glb/);
+    assert.equal(retarget.command.split(' && ').length, 2, '重定向命令只允许一个 &&（cd 分隔）');
 
     const gate = exec.buildClippingGateCommand({ glbPath: '/workspace/3d-assets/repair/out.glb', action: 'hang_loop' });
     assert.match(gate.command, /analyze_clipping\.py/);
