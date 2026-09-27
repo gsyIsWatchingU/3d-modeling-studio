@@ -79,13 +79,20 @@ def region_meshes_at_frame(obj, action, frame, scene_obj=None, frame_shift=0):
 
 
 def main():
+    argv = sys.argv
+    if "--" in argv:
+        argv = argv[argv.index("--") + 1:]
+    else:
+        argv = argv[1:]
     ap = argparse.ArgumentParser()
     ap.add_argument("--glb", required=True)
     ap.add_argument("--action", required=True)
     ap.add_argument("--scene-glb", default=None)
     ap.add_argument("--frame-stride", type=int, default=4)
-    ap.add_argument("--out", default="clipping_report.json")
-    args = ap.parse_args()
+    # 兼容 repair-executor 的 --report 与脚本自身文档的 --out
+    ap.add_argument("--report", dest="out", default="clipping_report.json")
+    ap.add_argument("--out", dest="out", default="clipping_report.json")
+    args = ap.parse_args(argv)
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.ops.import_scene.gltf(filepath=args.glb)
@@ -119,10 +126,8 @@ def main():
     report = run_clipping_gate(frames, action=args.action, frames_sampled=len(frames))
     with open(args.out, "w", encoding="utf-8") as fh:
         json.dump(report, fh, ensure_ascii=False, indent=2)
-    print(json.dumps({"gate": report["gate"], "status": report["status"],
-                      "frames_sampled": report["frames_sampled"],
-                      "fail_events": report["fail_events"], "warn_events": report["warn_events"],
-                      "out": args.out}))
+    # 完整报告打印到 stdout，供 repair-executor parseClippingReport 直接解析
+    print(json.dumps(report, ensure_ascii=False))
     return 0 if report["status"] != "failed" else 3
 
 
