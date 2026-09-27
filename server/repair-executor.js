@@ -36,16 +36,17 @@ function sshTransport(host) {
 }
 
 // ---------- 动画：构建 gsy013 Blender 重定向命令（纯函数，可测） ----------
-// retarget_hy.py 参数：--input 目标角色 GLB --fbx 源动作 FBX --alias 动作别名 --output 输出 GLB
-function buildRetargetCommand({ targetGlb, fbxPath, alias, outGlb }) {
+// retarget_hy.py 参数：--input 目标角色 GLB --fbx 源动作 FBX --alias 动作别名 --output 输出 GLB [--frames-out JSON]
+function buildRetargetCommand({ targetGlb, fbxPath, alias, outGlb, framesOut }) {
     if (!targetGlb || !fbxPath || !alias || !outGlb) throw new Error('重定向参数不完整：需要 targetGlb/fbxPath/alias/outGlb');
     const script = path.posix.join(FORGE3D_ROOT, 'blender', 'retarget_hy.py');
     // 参数必须与 blender 调用同一命令行（用 && 拆分会被 shell 当作独立命令执行）
+    const extra = framesOut ? ` --frames-out ${framesOut}` : '';
     const cmd = [
         `cd ${FORGE3D_ROOT}`,
-        `${BLENDER_PATH} --background --python ${script} -- --input ${targetGlb} --fbx ${fbxPath} --alias ${alias} --output ${outGlb}`
+        `${BLENDER_PATH} --background --python ${script} -- --input ${targetGlb} --fbx ${fbxPath} --alias ${alias} --output ${outGlb}${extra}`
     ].join(' && ');
-    return { host: 'gsy013', command: cmd, script, kind: 'animation.retarget_plan' };
+    return { host: 'gsy013', command: cmd, script, kind: 'animation.retarget_plan', framesOut: framesOut || null };
 }
 
 // ---------- 动画：构建穿模/变形门禁复测命令 ----------

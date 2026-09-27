@@ -70,14 +70,24 @@ async function runAnimation(job, inputs) {
             command: `cd ${exec.FORGE3D_ROOT} && ${exec.BLENDER_PATH} --background --python ${script} -- --input ${inputs.target_glb} --output ${outGlb}`
         };
     } else {
+        const framesOut = inputs.frames_out
+            ? `/workspace/3d-assets/repair/${job.id}/frames-${inputs.alias}.json`
+            : null;
         built = exec.buildRetargetCommand({
             targetGlb: inputs.target_glb,
             fbxPath: inputs.fbx,
             alias: inputs.alias,
-            outGlb
+            outGlb,
+            framesOut
         });
     }
     runRemoteAndLog(built);
+    // 可选：下载逐帧 LOCAL 四元数 JSON（游戏运行时 clip 复测证据）
+    if (inputs.frames_out && built.framesOut) {
+        fs.mkdirSync(path.dirname(inputs.frames_out), { recursive: true });
+        scpFrom('gsy013', built.framesOut, inputs.frames_out);
+        console.log(`[executor] 帧 JSON 下载到 ${inputs.frames_out}`);
+    }
     // 门禁复测：穿模/变形分析（同一 analyze_clipping.py）
     const gate = exec.buildClippingGateCommand({ glbPath: outGlb, action: inputs.alias, sceneGlb: inputs.scene_glb });
     const gateRes = runRemoteAndLog(gate);

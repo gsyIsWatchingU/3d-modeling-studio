@@ -1,0 +1,10 @@
+{
+  "target_glb": "/workspace/3d-assets/bridge-after-rain/v3/boy-runtime.glb",
+  "fbx": "/workspace/3d-assets/bridge-after-rain/hy-motion-story-actions-v1/00000041_000.fbx",
+  "alias": "hang",
+  "out_glb": "/workspace/3d-assets/repair/J000001/output-hang.glb",
+  "scene_glb": null,
+  "local_output": "E:\\prj-gsy\\the-bridge-after-rain\\review\\hy-motion-v1-retarget-repair\\J000001\\hang-repaired.glb",
+  "preview_url": null,
+  "frames_out": "E:\\prj-gsy\\the-bridge-after-rain\\review\\hy-motion-v1-retarget-repair\\J000001\\hang-frames.json"
+}
