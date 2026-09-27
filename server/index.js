@@ -34,6 +34,7 @@ const { getCatalog, modelingSkills } = require('./production-skills');
 const { createFactoryRouter } = require('./factory');
 const { startFactoryWorker } = require('./factory-worker');
 const { startStageWorker } = require('./stage-worker');
+const { createContractRouter } = require('./production-contract');
 const { backfillTerminalHistory } = require('./retrospective-worker');
 
 const app = express();
@@ -61,6 +62,8 @@ app.use((req, res, next) => {
 app.use(createAuthRouter());
 app.use('/api/production', createProductionRouter());
 app.use('/api/factory', createFactoryRouter());
+// ForgeLoop v2：生产契约读取/更新、质量报告、重跑质量检查
+app.use('/api/contracts', createContractRouter());
 // 修复任务通过 wake 唤醒建模 worker；modelWorkerWake 在 worker 启动后赋值。
 app.use('/api/learning', createLearningRouter({ wake: () => { if (modelWorkerWake) modelWorkerWake(); } }));
 app.use('/vendor/three', express.static(path.join(__dirname, '..', 'node_modules', 'three')));

@@ -1,12 +1,13 @@
 const fs = require('fs');
 const path = require('path');
-const { configDb, jobDb, modelDb, uploadDir, modelDir } = require('./db');
+const crypto = require('crypto');
+const { configDb, jobDb, modelDb, learningDb, uploadDir, modelDir } = require('./db');
 const { createReferenceBoard } = require('./image-board');
 const { validateGlbBuffer } = require('./utils');
 const { hashText } = require('./utils');
 const { enqueueJobNotifications } = require('./notifier');
 const { compileSkillPlan, SkillPlanError } = require('./skill-plan');
-const { verifyRepairPlan } = require('./modeling-learning');
+const { verifyRepairPlan, applyRepairToPlan, repairParamValid } = require('./modeling-learning');
 const { recordTerminalAttempt } = require('./retrospective-worker');
 
 const MAX_MODEL_BYTES = 300 * 1024 * 1024;
@@ -14,6 +15,68 @@ const FORGE_READY_STATES = new Set(['review', 'completed', 'approved', 'succeede
 const FORGE_FAILED_STATES = new Set(['failed', 'error', 'cancelled', 'canceled']);
 
 class PermanentJobError extends Error {}
+
+// ---------- ForgeLoop v2 策略引擎：让策略真正影响后续任务 ----------
+// draft：仅保存（不生效）。shadow：计算拟应用参数与差异，不改变生产任务。
+// small_scale：按稳定、可复现的比例采样应用，记录命中与对照组。
+// default：自动注入新任务执行计划（非修复任务）。
+// 回滚（rolled_back）：新任务立即停止应用；历史 Attempt 不变。
+function currentPlanValue(plan, param) {
+    const parts = param.split('.');
+    let node = plan;
+    for (const part of parts) {
+        if (!node || typeof node !== 'object') return undefined;
+        node = node[part];
+    }
+    return node;
+}
+
+function applyEffectivePolicies(job, plan) {
+    if (job.repair_variable) return { plan, applied: [], notes: ['修复任务不应用策略（保持父计划单变量语义）'] };
+    const ownerId = job.owner_id ?? undefined;
+    const domain = job.domain || 'model';
+    const assetKind = job.input?.asset_kind || 'prop';
+    const profile = job.input?.profile || 'xhs_mobile';
+    const policies = learningDb.listEffectivePolicies({ domain, assetKind, profile, ownerId });
+    const applied = [];
+    const notes = [];
+    let resultPlan = { ...plan };
+    for (const policy of policies) {
+        const pv = policy.changed_variable || policy.params?.changed_variable || null;
+        if (!pv || !repairParamValid(policy.domain || 'model', pv.param, pv.to)) {
+            notes.push(`策略 ${policy.id} 缺少合法白名单变量，跳过`);
+            continue;
+        }
+        if (policy.lifecycle === 'shadow') {
+            // 影子验证：只计算拟应用参数与差异，绝不改变生产任务
+            const diff = { [pv.param]: { from: currentPlanValue(resultPlan, pv.param), to: pv.to } };
+            notes.push(`shadow 策略 ${policy.id} 拟应用差异 ${JSON.stringify(diff)}（未生效）`);
+            learningDb.recordPolicyApplication(policy.id, {});
+            continue;
+        }
+        if (policy.lifecycle === 'small_scale') {
+            // 稳定采样：job.id + policy.id 确定性散列，命中则应用并记录，否则记对照组
+            const ratio = Math.max(0, Math.min(1, Number(policy.sample_ratio) || 0.1));
+            const h = crypto.createHash('sha256').update(`${job.id}:${policy.id}`).digest('hex');
+            const hit = parseInt(h.slice(0, 8), 16) / 0xffffffff < ratio;
+            if (hit) {
+                try { resultPlan = applyRepairToPlan(resultPlan, pv.param, pv.to); } catch (e) { notes.push(`small_scale 应用失败：${e.message}`); continue; }
+                applied.push({ id: policy.id, param: pv.param, to: pv.to, mode: 'small_scale-hit' });
+                learningDb.recordPolicyApplication(policy.id, { applied: true, hit: true });
+            } else {
+                notes.push(`small_scale 策略 ${policy.id} 进入对照组（未应用）`);
+                learningDb.recordPolicyApplication(policy.id, { control: true });
+            }
+            continue;
+        }
+        if (policy.lifecycle === 'default') {
+            try { resultPlan = applyRepairToPlan(resultPlan, pv.param, pv.to); } catch (e) { notes.push(`default 注入失败：${e.message}`); continue; }
+            applied.push({ id: policy.id, param: pv.param, to: pv.to, mode: 'default' });
+            learningDb.recordPolicyApplication(policy.id, { applied: true });
+        }
+    }
+    return { plan: resultPlan, applied, notes };
+}
 
 function getProviderConfig() {
     const stored = configDb.get();
@@ -47,6 +110,14 @@ async function submitJob(job, config) {
         plan = await compileSkillPlan(job);
         jobDb.update(job.id, { execution_plan: plan });
     }
+    // ForgeLoop v2 策略注入：draft/shadow/small_scale/default 按阶段生效；修复任务不注入
+    const policyResult = applyEffectivePolicies(job, plan);
+    plan = policyResult.plan;
+    jobDb.update(job.id, {
+        execution_plan: plan,
+        policy_applied: policyResult.applied,
+        policy_notes: policyResult.notes.length ? policyResult.notes : undefined
+    });
     // ForgeLoop 修复任务：提交 GPU 前重算 SHA 并校验参考图/Skill/Profile/其余参数均未变化。
     if (job.repair_variable) {
         try {
@@ -280,4 +351,4 @@ function startModelWorker() {
     return { wake: tick, stop: () => clearInterval(timer) };
 }
 
-module.exports = { getProviderConfig, findOutput, progressFromResult, providerQuality, startModelWorker, PermanentJobError };
+module.exports = { getProviderConfig, findOutput, progressFromResult, providerQuality, applyEffectivePolicies, startModelWorker, PermanentJobError };

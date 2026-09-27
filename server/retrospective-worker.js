@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { learningDb, jobDb, modelDb, uploadDir } = require('./db');
-const { classifyFailure, qualityScore, gateValueFails, gateValuePasses, SINGLE_VARIABLE_RULES } = require('./modeling-learning');
+const { classifyFailure, qualityScore, gateValueFails, gateValuePasses, repairParamValid } = require('./modeling-learning');
 
 function hashFileSafe(absPath) {
     try {
@@ -43,6 +43,14 @@ function recordTerminalAttempt(job, { model = null, result = null, error = null 
         const attempt = learningDb.createAttempt({
             job_id: job.id,
             owner_id: job.owner_id,
+            // ForgeLoop v2：领域/项目/阶段/资产/事件/证据/契约哈希（任务创建方声明，缺失回填 model）
+            domain: job.domain || 'model',
+            project: job.project || null,
+            stage: job.stage || null,
+            asset_id: job.asset_id || null,
+            event_id: job.event_id || null,
+            evidence: job.evidence || {},
+            contract_hash: job.contract_hash || null,
             asset_kind: input.asset_kind || 'prop',
             profile: input.profile || 'xhs_mobile',
             seed: input.seed ?? 1234,
@@ -87,6 +95,34 @@ function recordTerminalAttempt(job, { model = null, result = null, error = null 
     }
 }
 
+// 自动修复子 Attempt 收尾（ForgeLoop v2）：子 Attempt 已在 createAutoRepairChild 时创建
+// （auto_status=unknown），执行器真实重产后调用本函数一次性回填终态与门禁证据。
+// 只写输入快照之后的领域：auto_status/metrics/artifacts/pipeline/evidence；
+// 绝不触碰 human_* 字段 —— 自动流程永远停在 pending_human_review。
+function finalizeAutoRepairAttempt(job, { metrics = {}, artifacts = {}, pipeline = {}, gateEvidence = null } = {}) {
+    if (!job) return null;
+    const attempt = learningDb.findAttemptByJobId(job.id);
+    if (!attempt) return null;
+    if (attempt.auto_status !== 'unknown') return attempt; // 已收尾，幂等跳过
+    const failed = job.status === 'failed';
+    const autoStatus = failed ? 'failed' : 'succeeded';
+    const updated = learningDb.updateAttemptTerminal(job.id, {
+        auto_status: autoStatus,
+        metrics: {
+            ...(attempt.metrics || {}),
+            ...metrics,
+            duration_ms: durationMs(job) ?? (attempt.metrics?.duration_ms ?? null),
+            retry_count: job.attempt || 1
+        },
+        artifacts: { ...(attempt.artifacts || {}), ...artifacts },
+        pipeline: { ...(attempt.pipeline || {}), ...pipeline },
+        evidence: { ...(attempt.evidence || {}), ...(gateEvidence ? { gate: gateEvidence } : {}) },
+        failure_category: failed ? (attempt.failure_category || 'unknown') : null,
+        failure_detail: failed ? (job.error?.message || '未知失败') : null
+    });
+    return updated;
+}
+
 // 判断自动质量门是否「确有改善」：父 Attempt 有失败门禁，且修复 Attempt 在该维度转好。
 function autoGateImproved(beforeMetrics = {}, afterMetrics = {}) {
     const before = beforeMetrics.quality_gates || {};
@@ -127,7 +163,11 @@ function onHumanVerdict(attemptId, verdict, { category, notes, retestedInGame = 
     const improved = after !== null && (before === null || after > before);
     const gateImproved = autoGateImproved(parent.metrics, attempt.metrics);
     const variable = attempt.changed_variable;
-    const singleVariable = Boolean(variable?.param && SINGLE_VARIABLE_RULES[variable.param]);
+    // v2：单变量白名单按修复 Attempt 所在领域校验（model/animation/audio 各有独立白名单）。
+    // 旧代码用 SINGLE_VARIABLE_RULES 只认 model 变量，导致 audio.gain_adjust 等音频修复
+    // 即使改善并获人工批准也只能生成 Experiment、不能生成 Retrospective —— 已修复。
+    const singleVariable = Boolean(variable?.param &&
+        repairParamValid(attempt.domain || 'model', variable.param, variable.to));
     const gameVerified = scope === 'game';
 
     const chainValid = improved && gateImproved && singleVariable && scope !== null;
@@ -147,6 +187,7 @@ function onHumanVerdict(attemptId, verdict, { category, notes, retestedInGame = 
     if (chainValid) {
         const retro = learningDb.createRetrospective({
             owner_id: attempt.owner_id,
+            domain: attempt.domain || 'model',
             asset_kind: attempt.asset_kind,
             profile: attempt.profile,
             scope: { profile: attempt.profile },
@@ -192,4 +233,4 @@ function backfillTerminalHistory() {
     return created;
 }
 
-module.exports = { recordTerminalAttempt, onHumanVerdict, autoGateImproved, backfillTerminalHistory, hashFileSafe };
+module.exports = { recordTerminalAttempt, finalizeAutoRepairAttempt, onHumanVerdict, autoGateImproved, backfillTerminalHistory, hashFileSafe };

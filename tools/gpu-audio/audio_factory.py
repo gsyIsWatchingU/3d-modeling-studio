@@ -165,6 +165,92 @@ def generate(request, output_root, gpu, wait_lock=0):
         return manifest
 
 
+def postprocess(event_dir, project_id, event_id, gain=None, trim_start_s=None, output_root='/workspace/3d-assets/game-audio'):
+    """服务器后处理（ForgeLoop v2 音频修复执行器）。
+    以既有 GPU 任务产物为唯一音源，确定性应用增益/截取起点，产出独立新任务目录；
+    绝不覆盖原任务目录、原 manifest 或原产物。幂等：同源 + 同修复参数 → 同一 job_id。
+    注意：这里只做"后处理"，生成来源仍是 MOSS-SoundEffect / Qwen3-TTS 的 CUDA 产物。
+    """
+    import wave
+    if gain is not None and (not isinstance(gain, (int, float)) or not 0.05 <= gain <= 2.0):
+        raise ValueError('gain 须在 0.05～2.0 之间')
+    if trim_start_s is not None and (not isinstance(trim_start_s, (int, float)) or not 0 <= trim_start_s <= 30):
+        raise ValueError('trim_start_s 须在 0～30 秒之间')
+    if gain is None and trim_start_s is None:
+        raise ValueError('至少需要 gain 或 trim_start_s 之一')
+    src = Path(event_dir).resolve()
+    if not src.is_dir():
+        raise RuntimeError(f'父任务目录不存在：{src}')
+    manifest_path = src / 'manifest.json'
+    if not manifest_path.is_file():
+        raise RuntimeError('父任务缺少 manifest.json，拒绝后处理')
+    parent = json.loads(manifest_path.read_text(encoding='utf-8'))
+    parent_job_id = parent.get('job_id') or src.name
+    candidates = [f for f in (parent.get('outputs') or []) if f.get('file', '').endswith('.wav')]
+    if not candidates:
+        raise RuntimeError('父任务没有 WAV 产物，无法后处理')
+    src_wav = src / candidates[0]['file']
+    if not src_wav.is_file():
+        raise RuntimeError(f'父 WAV 缺失：{src_wav}')
+    # 幂等 job_id：父任务 + 修复参数 确定性派生
+    identity = json.dumps({'parent_job_id': parent_job_id, 'repair': {'gain': gain, 'trim_start_s': trim_start_s},
+                           'pipeline': digest(Path(__file__))}, sort_keys=True).encode()
+    job_id = hashlib.sha256(identity).hexdigest()[:24]
+    out_dir = Path(output_root).resolve() / project_id / event_id / job_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_manifest = out_dir / 'manifest.json'
+    out_wav = out_dir / f'{event_id}-repair-{job_id[:8]}.wav'
+    if out_manifest.exists() and out_wav.is_file():
+        old = json.loads(out_manifest.read_text(encoding='utf-8'))
+        if old.get('status') == 'review' and digest(out_wav) == old.get('outputs', [{}])[0].get('sha256'):
+            return old
+    with wave.open(str(src_wav), 'rb') as rd:
+        params = rd.getparams()
+        n_channels, sampwidth, framerate, n_frames = params[:4]
+        frames = bytearray(rd.readframes(n_frames))
+    if trim_start_s:
+        skip = int(trim_start_s * framerate) * n_channels * sampwidth
+        frames = frames[skip:]
+    if gain is not None and abs(gain - 1.0) > 1e-9:
+        import array
+        if sampwidth == 2:
+            samples = array.array('h')
+            samples.frombytes(bytes(frames))
+            for i in range(len(samples)):
+                v = int(round(samples[i] * gain))
+                samples[i] = max(-32768, min(32767, v))
+            frames = samples.tobytes()
+        elif sampwidth == 1:
+            samples = array.array('b')
+            samples.frombytes(bytes(frames))
+            for i in range(len(samples)):
+                v = int(round((samples[i] - 128) * gain + 128))
+                samples[i] = max(0, min(255, v))
+            frames = samples.tobytes()
+        else:
+            raise RuntimeError(f'不支持的位深 {sampwidth * 8}，无法做增益后处理')
+    with wave.open(str(out_wav), 'wb') as wr:
+        wr.setparams(params)
+        wr.writeframes(bytes(frames))
+    out_sha = digest(out_wav)
+    with wave.open(str(out_wav), 'rb') as rd:
+        rd.readframes(rd.getnframes())
+        peak = max((abs(b) for b in rd.readframes(rd.getnframes())), default=0)
+    duration_s = round(len(frames) / (n_channels * sampwidth * framerate), 3)
+    out_manifest.write_text(json.dumps({
+        'job_id': job_id, 'status': 'review', 'review': 'pending',
+        'parent_job_id': parent_job_id, 'repair': {'gain': gain, 'trim_start_s': trim_start_s},
+        'source': {'wav': str(src_wav), 'sha256': digest(src_wav), 'source_manifest': str(manifest_path)},
+        'project_id': project_id, 'event_id': event_id,
+        'outputs': [{'file': out_wav.name, 'sha256': out_sha, 'duration_s': duration_s, 'peak': peak}],
+        'host': socket.gethostname(), 'pipeline_sha256': digest(Path(__file__)), 'finished_at': time.time(),
+        'note': '服务器后处理（确定性 DSP）；生成来源仍是 GPU CUDA 产物'
+    }, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    return {'job_id': job_id, 'status': 'review', 'review': 'pending', 'parent_job_id': parent_job_id,
+            'repair': {'gain': gain, 'trim_start_s': trim_start_s},
+            'outputs': [{'file': out_wav.name, 'sha256': out_sha, 'duration_s': duration_s}]}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
@@ -174,9 +260,21 @@ def main():
     gen.add_argument('--output-root', default='/workspace/3d-assets/game-audio')
     gen.add_argument('--gpu', type=int, default=0, choices=range(8))
     gen.add_argument('--wait-lock', type=int, default=0, choices=range(1801), help='等待全局串行锁的秒数；独立 CLI 默认立即返回')
+    pp = sub.add_parser('postprocess')
+    pp.add_argument('--event-dir', required=True, help='父 GPU 任务目录（唯一音源）')
+    pp.add_argument('--project', required=True)
+    pp.add_argument('--event', required=True)
+    pp.add_argument('--gain', type=float, default=None)
+    pp.add_argument('--trim-start-s', type=float, default=None)
+    pp.add_argument('--out-root', default='/workspace/3d-assets/game-audio')
     args = parser.parse_args()
     try:
-        result = doctor() if args.command == 'doctor' else generate(json.loads(Path(args.request).read_text(encoding='utf-8-sig')), args.output_root, args.gpu, args.wait_lock)
+        if args.command == 'doctor':
+            result = doctor()
+        elif args.command == 'generate':
+            result = generate(json.loads(Path(args.request).read_text(encoding='utf-8-sig')), args.output_root, args.gpu, args.wait_lock)
+        else:
+            result = postprocess(args.event_dir, args.project, args.event, args.gain, args.trim_start_s, args.out_root)
         print(json.dumps(result, ensure_ascii=False))
     except Exception as e:
         print(json.dumps({'status': 'failed', 'error': str(e)}, ensure_ascii=False), file=sys.stderr)

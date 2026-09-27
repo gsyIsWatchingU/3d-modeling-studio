@@ -43,6 +43,8 @@ function initialData() {
         retrospectives: [],
         modeling_policies: [],
         experiments: [],
+        // ForgeLoop v2：统一生产契约（按项目 ID 存储，文档含 sha256 证据锚点）
+        production_contracts: [],
         settings: { default_skill_ids: [BUILTIN_SKILL.id], default_skill_id: BUILTIN_SKILL.id },
         user_settings: {},
         spu_config: { provider: 'forge3d', api_url: '', api_key: '' },
@@ -77,6 +79,18 @@ function normalizeDb(raw) {
     db.retrospectives = Array.isArray(db.retrospectives) ? db.retrospectives : [];
     db.modeling_policies = Array.isArray(db.modeling_policies) ? db.modeling_policies : [];
     db.experiments = Array.isArray(db.experiments) ? db.experiments : [];
+    db.production_contracts = Array.isArray(db.production_contracts) ? db.production_contracts : [];
+    // ForgeLoop v2 幂等回填：旧 Attempt 只增字段（domain 回填为 model），不重命名/不删除现有数据。
+    // 重复 normalize 不会产生第二次变更，迁移天然幂等。
+    for (const attempt of db.learning_attempts) {
+        if (attempt.domain === undefined) attempt.domain = 'model';
+        if (attempt.project === undefined) attempt.project = null;
+        if (attempt.stage === undefined) attempt.stage = null;
+        if (attempt.asset_id === undefined) attempt.asset_id = null;
+        if (attempt.event_id === undefined) attempt.event_id = null;
+        if (attempt.evidence === undefined) attempt.evidence = {};
+        if (attempt.contract_hash === undefined) attempt.contract_hash = null;
+    }
     db.user_notifications = db.user_notifications && typeof db.user_notifications === 'object' ? db.user_notifications : {};
     db.user_settings = db.user_settings && typeof db.user_settings === 'object' ? db.user_settings : {};
     if (!db.skills.some(skill => skill.id === BUILTIN_SKILL.id)) db.skills.unshift(BUILTIN_SKILL);
@@ -119,8 +133,10 @@ function initDb() {
         return;
     }
     const current = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    // normalizeDb 原地改造 raw 对象，必须先克隆再比较，否则恒等导致回填永不落盘
+    const before = JSON.parse(JSON.stringify(current));
     const normalized = normalizeDb(current);
-    if (JSON.stringify(current) !== JSON.stringify(normalized)) writeDb(normalized);
+    if (JSON.stringify(before) !== JSON.stringify(normalized)) writeDb(normalized);
 }
 
 function readDb() {
@@ -386,6 +402,20 @@ const jobDb = {
                 ...(data.repair_variable ? { repair_variable: data.repair_variable } : {}),
                 ...(data.parent_plan_sha ? { parent_plan_sha: data.parent_plan_sha } : {}),
                 ...(data.execution_plan ? { execution_plan: data.execution_plan } : {}),
+                // ForgeLoop v2：领域/项目/阶段/资产/事件/证据/契约哈希（由任务创建方显式声明）
+                ...(data.domain ? { domain: data.domain } : {}),
+                ...(data.project ? { project: data.project } : {}),
+                ...(data.stage ? { stage: data.stage } : {}),
+                ...(data.asset_id ? { asset_id: data.asset_id } : {}),
+                ...(data.event_id ? { event_id: data.event_id } : {}),
+                ...(data.evidence ? { evidence: data.evidence } : {}),
+                ...(data.contract_hash ? { contract_hash: data.contract_hash } : {}),
+                // ForgeLoop v2 受限自动修复：输入/产物 SHA 锚点、门禁证据、执行器、自动修复标记
+                ...(data.input_sha ? { input_sha: data.input_sha } : {}),
+                ...(data.artifact_sha ? { artifact_sha: data.artifact_sha } : {}),
+                ...(data.gate_evidence ? { gate_evidence: data.gate_evidence } : {}),
+                ...(data.executor ? { executor: data.executor } : {}),
+                ...(data.auto_repair ? { auto_repair: data.auto_repair } : {}),
                 created_at: now,
                 updated_at: now
             };
@@ -605,6 +635,14 @@ const learningDb = {
                 id: `LA${String(db.nextLearningId++).padStart(6, '0')}`,
                 job_id: data.job_id || null,
                 owner_id: data.owner_id ?? null,
+                // ForgeLoop v2：领域（model/animation/audio/integration/qa）、项目、阶段、资产/事件 ID
+                domain: data.domain || 'model',
+                project: data.project || null,
+                stage: data.stage || null,
+                asset_id: data.asset_id || null,
+                event_id: data.event_id || null,
+                evidence: data.evidence || {},            // 失败/警告证据：穿模帧、音频追踪、碰撞区域等
+                contract_hash: data.contract_hash || null,
                 asset_kind: data.asset_kind || 'prop',
                 profile: data.profile || 'xhs_mobile',
                 seed: data.seed ?? 1234,
@@ -634,8 +672,7 @@ const learningDb = {
         });
     },
     // 只允许追加人工结论，绝不回写输入快照字段
-    applyVerdict(attemptId, verdict, { category, notes, reviewerId, defectScore, validationScope } = {}) {
-        return mutate(db => {
+    applyVerdict(attemptId, verdict, { category, notes, reviewerId, defectScore, validationScope } = {}) {        return mutate(db => {
             const attempt = db.learning_attempts.find(a => a.id === attemptId);
             if (!attempt) return null;
             if (attempt.human_verdict !== 'pending') throw new Error('该 Attempt 已审片，不能重复改判');
@@ -660,6 +697,23 @@ const learningDb = {
             return clone(attempt);
         });
     },
+    // v2 自动修复收尾：回填终态快照（auto_status/metrics/artifacts/pipeline/evidence 等），
+    // 绝不触碰 human_* 字段（自动流程必须停在 pending_human_review）。
+    updateAttemptTerminal(jobId, data) {
+        return mutate(db => {
+            const attempt = db.learning_attempts.find(a => a.job_id === jobId);
+            if (!attempt) return null;
+            attempt.auto_status = data.auto_status || attempt.auto_status;
+            if (data.metrics) attempt.metrics = data.metrics;
+            if (data.artifacts) attempt.artifacts = data.artifacts;
+            if (data.pipeline) attempt.pipeline = data.pipeline;
+            if (data.evidence) attempt.evidence = data.evidence;
+            if (data.failure_category) attempt.failure_category = data.failure_category;
+            if (data.failure_detail) attempt.failure_detail = data.failure_detail;
+            attempt.updated_at = new Date().toISOString();
+            return clone(attempt);
+        });
+    },
 
     listRetrospectives({ ownerId, limit = 50 } = {}) {
         return clone(readDb().retrospectives
@@ -673,6 +727,7 @@ const learningDb = {
             const retro = {
                 id: `RT${String(db.nextRetroId++).padStart(6, '0')}`,
                 owner_id: data.owner_id ?? null,
+                domain: data.domain || 'model',
                 asset_kind: data.asset_kind || 'prop',
                 profile: data.profile || null,
                 scope: data.scope || null,                 // { profile } 适用范围
@@ -707,6 +762,7 @@ const learningDb = {
             const policy = {
                 id: `MP-${crypto.randomUUID()}`,
                 owner_id: data.owner_id ?? null,
+                domain: data.domain || 'model',      // v2：策略按领域独立积累证据
                 asset_kind: data.asset_kind || 'prop',
                 scope: data.scope || {},                 // { profile } 等适用范围
                 name: String(data.name || '未命名策略').slice(0, 80),
@@ -715,6 +771,13 @@ const learningDb = {
                 version: 1,
                 params: data.params || {},               // { profile, seed?, prompt_addendum?, skill_instruction? }
                 basis_retro_ids: data.basis_retro_ids || [],
+                // v2：策略携带已登记的修复变量（default/small_scale 由 model-worker 注入新任务执行计划）
+                ...(data.changed_variable ? { changed_variable: data.changed_variable } : {}),
+                // v2 小规模应用统计：采样比例与命中/对照组（服务端记录，客户端不可写）
+                sample_ratio: data.sample_ratio || 0,
+                applied_count: 0,
+                hit_count: 0,
+                control_count: 0,
                 // 证据数量一律由服务端依据已闭合因果链计算，客户端提交的 evidence_case_count 一律忽略
                 evidence_case_count: 0,
                 game_verified_count: 0,
@@ -765,6 +828,28 @@ const learningDb = {
             return clone(policy);
         });
     },
+    // v2 策略应用统计（小规模命中/对照组）：由策略引擎在每次注入决策后记录，客户端不可写
+    recordPolicyApplication(policyId, { applied, hit, control } = {}) {
+        return mutate(db => {
+            const policy = db.modeling_policies.find(p => p.id === policyId);
+            if (!policy) return null;
+            if (applied) policy.applied_count = (policy.applied_count || 0) + 1;
+            if (hit) policy.hit_count = (policy.hit_count || 0) + 1;
+            if (control) policy.control_count = (policy.control_count || 0) + 1;
+            policy.updated_at = new Date().toISOString();
+            return clone(policy);
+        });
+    },
+    // v2 生效策略查询：default 直接注入执行计划；small_scale 按稳定比例采样；
+    // shadow 只计算拟应用参数与差异；draft/rolled_back 一律不生效。
+    listEffectivePolicies({ domain, assetKind, profile, ownerId } = {}) {
+        const all = readDb().modeling_policies.filter(p =>
+            (ownerId === undefined || p.owner_id === ownerId) &&
+            (domain === undefined || p.domain === domain) &&
+            (assetKind === undefined || p.asset_kind === assetKind) &&
+            (profile === undefined || !p.scope?.profile || p.scope.profile === profile));
+        return clone(all.filter(p => p.lifecycle === 'default' || p.lifecycle === 'small_scale' || p.lifecycle === 'shadow'));
+    },
 
     listExperiments({ ownerId, limit = 50 } = {}) {
         return clone(readDb().experiments
@@ -802,6 +887,45 @@ const learningDb = {
     }
 };
 
+// ---------- ForgeLoop v2：统一生产契约（按项目 ID 存储，文档含 sha256 证据锚点） ----------
+const contractDb = {
+    list(ownerId) {
+        return clone(readDb().production_contracts
+            .filter(c => ownerId === undefined || c.owner_id === ownerId)
+            .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at)));
+    },
+    get(projectId, ownerId) {
+        const record = readDb().production_contracts.find(c =>
+            c.project_id === projectId && (ownerId === undefined || c.owner_id === ownerId));
+        return clone(record || null);
+    },
+    // upsert：同一项目 ID 幂等覆盖（契约是权威来源，覆盖即版本更新）
+    save(projectId, doc, ownerId) {
+        return mutate(db => {
+            const now = new Date().toISOString();
+            const existing = db.production_contracts.find(c => c.project_id === projectId && c.owner_id === ownerId);
+            const record = {
+                project_id: projectId,
+                owner_id: ownerId ?? null,
+                doc,
+                sha256: doc.sha256,
+                updated_at: now,
+                created_at: existing?.created_at || now
+            };
+            if (existing) Object.assign(existing, record);
+            else db.production_contracts.push(record);
+            return clone(record);
+        });
+    },
+    remove(projectId, ownerId) {
+        return mutate(db => {
+            const before = db.production_contracts.length;
+            db.production_contracts = db.production_contracts.filter(c => !(c.project_id === projectId && c.owner_id === ownerId));
+            return before !== db.production_contracts.length;
+        });
+    }
+};
+
 function getStats() {
     const db = readDb();
     const jobCounts = {};
@@ -835,6 +959,7 @@ module.exports = {
     productionPlanDb,
     factoryDb,
     learningDb,
+    contractDb,
     getStats,
     dbPath,
     uploadDir,

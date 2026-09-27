@@ -177,3 +177,26 @@ def collect_quality_violations(
             ):
                 violations.append("knee_lateral_twist")
     return list(dict.fromkeys(violations))
+
+
+def collect_clipping_violations(report: dict[str, Any], profile: dict[str, Any]) -> list[str]:
+    """把穿模门禁报告（clipping_core.run_clipping_gate 输出）转换为稳定门禁代码。
+
+    report: {gate:'clipping_review', status:'passed'|'warn'|'failed',
+             fail_events:[...], warn_events:[...], action, frames_sampled}
+    语义：非允许区域连续两帧相交 → failed；单帧 → warn；均无 → passed。
+    门禁值 failed 由 server 端 classifyFailure 归为 clipping 领域，触发单变量修复。
+    """
+    if not report or report.get("gate") != "clipping_review":
+        return ["clipping_review_missing"]
+    status = report.get("status", "pending")
+    violations: list[str] = []
+    if status == "failed":
+        violations.append("clipping_penetration")
+        for ev in report.get("fail_events", []):
+            regions = "-".join(ev.get("regions", [])) or "unknown"
+            frames = ",".join(str(x) for x in ev.get("frames", [])[:3])
+            violations.append(f"clipping_{regions}@{frames}")
+    elif status == "warn":
+        violations.append("clipping_single_frame")
+    return list(dict.fromkeys(violations))
