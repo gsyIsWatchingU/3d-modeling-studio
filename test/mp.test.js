@@ -383,9 +383,9 @@ test('scheduler: character 链含 normalize → rig → retarget_animation → e
     sched.ensureTasks(store.findParent(parent.id));
     const rig = store.tasksForParent(parent.id).find(t => t.stage === 'rig');
     assert.ok(rig, 'character 链应创建 rig');
-    assert.equal(rig.capability, 'rig:t4');
-    const r1 = artifacts.saveArtifact({ parentId: parent.id, taskId: rig.id, fileName: 'rig.glb', buffer: Buffer.from('rig'), fromHost: 't4-0' });
-    claimAndComplete('rig:t4', [{ key: 'mesh', fileName: 'rig.glb', sha256: r1.sha256 }]);
+    assert.equal(rig.capability, 'rig:l20');
+    const r1 = artifacts.saveArtifact({ parentId: parent.id, taskId: rig.id, fileName: 'rig.glb', buffer: Buffer.from('rig'), fromHost: 'gsy013' });
+    claimAndComplete('rig:l20', [{ key: 'mesh', fileName: 'rig.glb', sha256: r1.sha256 }]);
 
     sched.ensureTasks(store.findParent(parent.id));
     const anim = store.tasksForParent(parent.id).find(t => t.stage === 'retarget_animation');

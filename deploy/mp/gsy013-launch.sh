@@ -31,6 +31,10 @@ export FORGE3D_ENABLE_PBR="${FORGE3D_ENABLE_PBR:-0}"
 export MP_PYTHON="${MP_PYTHON:-/workspace/.envs/hunyuan3d/bin/python}"
 
 CPU_CAPS="draft_preview:t4,candidate_qc:t4,normalize:t4,export:t4,preview:t4,validate:t4,animation:t4"
+# UniRig（rig）依赖 bpy/独立 Blender（需 glibc 2.28+），T4（glibc 2.27）不可运行，
+# 由本机 L20 GPU Worker 执行（能力 rig:l20）。与 forge3d worker 并发使用 L20，
+# 46GB 显存可容纳 paint+rig 同跑；若出现 OOM 需回退为排队串行。
+RIG_CAPS="rig:l20"
 
 start_worker() {
   local name="$1" caps="$2" gpu="$3"
@@ -46,6 +50,7 @@ start_worker() {
 
 start_worker worker-cpu0 "$CPU_CAPS" -
 start_worker worker-cpu1 "$CPU_CAPS" -
+start_worker worker-gpu0 "$RIG_CAPS" 0
 
 echo "=== 进程 ==="
 for f in "$PID_DIR"/*.pid; do

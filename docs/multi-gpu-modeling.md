@@ -6,12 +6,14 @@
 
 将现有串行 Forge3D 建模流程扩展为「父任务 + 阶段子任务」的可恢复并行工作流：
 
-- **4×Tesla T4（新机 `gsy0930-b9b54d748-88kqg`）**：Shape 网格生成、多种子候选并行、UniRig 绑骨与蒙皮。
-- **L20（`gsy013`，1×L20）**：Hunyuan Paint / PBR 贴图（只接收被选中的候选）、重型阶段兜底、串行生产兜底。
+- **4×Tesla T4（新机 `gsy0930-b9b54d748-88kqg`）**：Shape 网格生成、多种子候选并行。
+- **L20（`gsy013`，1×L20）**：Hunyuan Paint / PBR 贴图（只接收被选中的候选）、UniRig 绑骨与蒙皮（`rig:l20`，L20 GPU Worker）、重型阶段兜底、串行生产兜底。
 - **CPU（Blender 阶段）**：规范化、尺寸/朝向/枢轴、GLB 导出、预览渲染、自动质检。
-  - **实测约束**：T4 为 Ubuntu 18.04（glibc 2.27），Blender 4.5.13 需要 glibc 2.28+，无法在 T4 运行；
+  - **实测约束**：T4 为 Ubuntu 18.04（glibc 2.27），Blender 4.5.13 与 UniRig 依赖的 bpy 均需要 glibc 2.28+，
+    在 T4 物理不可运行（实测 `ImportError: GLIBC_2.28 not found`）；
     因此所有 Blender 类阶段（draft_preview/candidate_qc/normalize/export/preview/validate/retarget_animation）
-    由 **gsy013 的 2 个 CPU Worker** 承担（gsy013 为 Ubuntu 22.04，Blender 4.5.13 正常）。T4 只跑 4 个 GPU Worker（shape/rig）。
+    由 **gsy013 的 2 个 CPU Worker** 承担，UniRig 由 **gsy013 的 1 个 L20 GPU Worker**（`rig:l20`）承担。
+    T4 只跑 4 个 GPU Worker（shape）。
 - 两种并行模式：`parallel_assets`（多资产并行）、`candidate_race`（同资产多 seed 候选竞争，仅选中者进入 Paint）。
 - 合并语义：**父任务聚合子任务 → 选择候选 → Blender 场景/动画组装 → manifest 聚合**，不是拆分单个角色焊接。
 
@@ -20,8 +22,8 @@
 | 主机 | 集群 IP | 角色 | 服务 |
 |---|---|---|---|
 | mygpu（`gsy-5757878579-wsdv7`） | 10.42.0.166 | 控制面 | 3d-modeling-studio :3300（0.0.0.0）；本机 Forge3D :8091（2×L20，串行生产引擎，127.0.0.1 不变） |
-| T4（`gsy0930-b9b54d748-88kqg`） | 10.42.9.119 | 4×T4 + 96 CPU | 4 个 GPU Worker（shape/rig），无 Forge3D API、无 Redis、无 Blender 能力 |
-| gsy013（`gsy-s-9cff6dc4f-65m6j`） | 10.42.0.177 | L20 Paint + CPU Blender | Forge3D :8091（paint 端点，令牌鉴权）；2 个 CPU Worker（Blender 类阶段） |
+| T4（`gsy0930-b9b54d748-88kqg`） | 10.42.9.119 | 4×T4 + 96 CPU | 4 个 GPU Worker（shape:t4），无 Forge3D API、无 Redis、无 Blender 能力 |
+| gsy013（`gsy-s-9cff6dc4f-65m6j`） | 10.42.0.177 | L20 Paint + L20 UniRig + CPU Blender | Forge3D :8091（paint 端点，令牌鉴权）；2 个 CPU Worker（Blender 类阶段）；1 个 L20 GPU Worker（rig:l20） |
 
 实测连通性：`T4 → mygpu:3300 HTTP 200`；`mygpu → gsy013:10.42.0.177` 可达；`gsy013 → mygpu` **不可达**；
 NAT 端口（31611/30660/30627）仅暴露 SSH。因此：
@@ -55,7 +57,7 @@ NAT 端口（31611/30660/30627）仅暴露 SSH。因此：
 |---|---|---|
 | `shape:t4` | T4 GPU Worker 0..3（动态领取） | shape |
 | `paint:l20` | gsy013 Forge3D worker（L20） | paint |
-| `rig:t4` | T4 GPU Worker（UniRig，真实 GPU） | rig |
+| `rig:l20` | gsy013 GPU Worker（UniRig，真实 L20 GPU） | rig |
 | `draft_preview:t4` / `candidate_qc:t4` | gsy013 CPU Worker（Blender） | draft_preview / candidate_qc |
 | `normalize:t4` / `export:t4` / `preview:t4` / `validate:t4` | gsy013 CPU Worker（Blender） | normalize / export / render_preview / validate |
 | `animation:t4` | gsy013 CPU Worker（Blender 重定向） | retarget_animation |
@@ -72,7 +74,7 @@ CPU Worker 用相同能力列表（`gsy013-launch.sh`），任意一个都可接
 1. `candidate_race` 默认并行 4 个 seed（每个 T4 一张卡）。
 2. Shape 候选必须先生成预览与 QC，才进入选择。
 3. 只把**选中**候选送到 L20 Paint。
-4. Paint 产物传回 T4 做 UniRig 与动作。
+4. Paint 产物传回 gsy013 做 UniRig（`rig:l20`，L20 GPU Worker）与动作。
 5. 幂等键 = `parentId:stage:seed:inputSha:pipelineVersion:stageVersion`，完成阶段不重复执行、不重复消耗 GPU。
 6. 自动评分只排序/拒绝明显失败项，**不能自动 approved**。
 7. 动画基于同一已确认骨架，按动作片段并行，最终聚合为动画集（当前由 Blender retarget 全量执行）。
@@ -113,7 +115,7 @@ CPU Worker 用相同能力列表（`gsy013-launch.sh`），任意一个都可接
 - 控制面：`server/mp/`（constants / store / artifacts / scheduler / paint / worker-api），挂载于既有 Express 应用。
 - T4：`/workspace/runtime` 独立 Python 3.10/3.11 + 模型（拷贝自 gsy013，SHA 记录）；4 个 GPU Worker（`deploy/mp/t4-launch.sh`，纯标准库）。
 - gsy013：`/v1/stages/paint` 端点（`X-Forge3D-Token`），复用既有 worker 队列，旧 `/v1/jobs` 不变；
-  2 个 CPU Worker（`deploy/mp/gsy013-launch.sh`，Blender 阶段 + animation:t4）。
+  2 个 CPU Worker + 1 个 L20 GPU Worker（`deploy/mp/gsy013-launch.sh`；Blender 阶段 + animation:t4 + rig:l20）。
 - Paint 传输：控制面 scp（`paint.js`，**scp 参数只含选项 + [源,目标]**，避免多余 token 被当成源文件）→ gsy013 本机 curl 提交 → 轮询 → scp 拉回，全程 SHA-256 记录。
 
 ## 10. 回退

@@ -250,7 +250,9 @@ class MpScheduler {
         const afterPaint = order.slice(paintIdx + 1).filter(s => s !== 'select' && s !== 'review');
         for (const stage of afterPaint) {
             if (hasCompleted(stage)) continue;
-            const prevStage = order[order.indexOf(stage) - 1];
+            // validate 的网格输入取自 export（exported.glb），而非上一阶段
+            // render_preview（只输出 preview，无 mesh），否则输入链断裂。
+            const prevStage = stage === 'validate' ? 'export' : order[order.indexOf(stage) - 1];
             if (!prevStage) continue;
             const prevTask = prevStage === 'paint' ? paintTask : stageTasks(prevStage).find(t => t.status === TASK_STATUS.COMPLETED);
             if (prevStage === 'paint' && (!paintTask || paintTask.status !== TASK_STATUS.COMPLETED)) continue;

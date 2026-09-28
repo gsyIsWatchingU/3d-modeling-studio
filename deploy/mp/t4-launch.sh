@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # T4 四卡 Worker 启动脚本（幂等，可重复执行）。
-# 4 × GPU Worker：CUDA_VISIBLE_DEVICES=0..3，能力 shape:t4,rig:t4
-# 说明：T4 为 Ubuntu 18.04（glibc 2.27），Blender 4.5.13 需要 glibc 2.28+，
-#       故 Blender 类 CPU 阶段（draft_preview/candidate_qc/normalize/export/preview/validate/
-#       retarget_animation）由 gsy013 的 CPU Worker 承担（见 gsy013-launch.sh）。
+# 4 × GPU Worker：CUDA_VISIBLE_DEVICES=0..3，能力 shape:t4
+# 说明：T4 为 Ubuntu 18.04（glibc 2.27），UniRig 依赖的 bpy/独立 Blender 需要 glibc 2.28+，
+#       故 rig 由 gsy013 L20 Worker 承担（rig:l20，见 gsy013-launch.sh）；Blender 类 CPU 阶段
+#       （draft_preview/candidate_qc/normalize/export/preview/validate/retarget_animation）
+#       同样由 gsy013 的 CPU Worker 承担。
 set -euo pipefail
 
 TOKEN_FILE=/workspace/etc/mp-worker-token
@@ -16,7 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PID_DIR=/workspace/runtime/worker-pids
 mkdir -p "$PID_DIR" /workspace/logs/mp /workspace/runtime/work
 
-GPU_CAPS="shape:t4,rig:t4"
+GPU_CAPS="shape:t4"
 
 start_worker() {
   local name="$1" caps="$2" gpu="$3"

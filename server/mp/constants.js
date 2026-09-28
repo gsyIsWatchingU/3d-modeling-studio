@@ -42,7 +42,9 @@ const STAGE_CAPABILITY = {
     select: 'control',
     paint: 'paint:l20',
     normalize: 'normalize:t4',
-    rig: 'rig:t4',
+    // UniRig 依赖 bpy 与独立 Blender（均需 glibc 2.28+）；T4 为 glibc 2.27 无法运行，
+    // 故 rig 由 gsy013（Ubuntu 22.04）的 GPU Worker 在 L20 上执行。
+    rig: 'rig:l20',
     retarget_animation: 'animation:t4',
     export: 'export:t4',
     render_preview: 'preview:t4',
