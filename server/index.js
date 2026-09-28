@@ -36,6 +36,12 @@ const { startFactoryWorker } = require('./factory-worker');
 const { startStageWorker } = require('./stage-worker');
 const { createContractRouter } = require('./production-contract');
 const { backfillTerminalHistory } = require('./retrospective-worker');
+// 多节点并行建模（Multi-GPU）
+const { createMpRouter } = require('./mp/worker-api');
+const { MpScheduler } = require('./mp/scheduler');
+const mpStore = require('./mp/store');
+const mpArtifacts = require('./mp/artifacts');
+const mpPaint = require('./mp/paint');
 // ForgeLoop v3：启动即初始化六领域自动质量策略（幂等，旧库跳过已存在版本）
 const { ensurePolicies } = require('./auto-policy');
 ensurePolicies();
@@ -404,11 +410,19 @@ app.delete('/api/models/:id', requireUser, (req, res) => {
 app.post('/api/models/upload', (req, res) => res.status(410).json({ success: false, error: '请使用新的多图异步任务接口 /api/jobs' }));
 app.post('/api/models/:id/generate', (req, res) => res.status(410).json({ success: false, error: '请使用新的多图异步任务接口 /api/jobs' }));
 
+// 多节点并行建模（Multi-GPU）：默认关闭新界面入口但路由常驻；MP_ENABLED=1 时启动调度器。
+const mpScheduler = new MpScheduler({ store: mpStore, artifacts: mpArtifacts, paint: mpPaint, uploadDir });
+const mpRouter = createMpRouter({ uploadDir });
+app.use('/api/mp', (req, res, next) => { req.mpScheduler = mpScheduler; next(); }, mpRouter);
+
 app.get('/api/health', (req, res) => {
     res.json({
         success: true,
         status: 'running',
         provider_configured: Boolean(getProviderConfig().apiUrl),
+        mp_enabled: String(process.env.MP_ENABLED || '1') === '1',
+        mp_paint_configured: mpPaint.isConfigured(),
+        mp_stats: mpStore.stats(),
         stats: getStats(),
         timestamp: new Date().toISOString()
     });
@@ -431,6 +445,9 @@ const modelWorker = startModelWorker();
 modelWorkerWake = () => modelWorker.wake();
 const factoryWorker = startFactoryWorker();
 const stageWorker = startStageWorker();
+// 多节点并行建模调度器（与旧串行 worker 并行运行；停用时不启动）
+if (String(process.env.MP_ENABLED || '1') === '1') mpScheduler.start();
+else console.log('[MP调度] MP_ENABLED=0，并行建模调度器未启动');
 
 // ForgeLoop 历史回填（幂等）：把已到终态但尚未记录 Attempt 的任务补记，使线上完成模型进入待审片队列。
 try {
@@ -446,6 +463,7 @@ app.listen(PORT, '0.0.0.0', () => {
 });
 
 process.on('SIGTERM', () => {
+    mpScheduler.stop();
     modelWorker.stop();
     notificationWorker.stop();
     factoryWorker.stop();
