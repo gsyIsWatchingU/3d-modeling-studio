@@ -1,14 +1,20 @@
 #!/usr/bin/env node
-/* run-v31-pilot.cjs 鈥?ForgeLoop v3.1 鐪熷疄缂洪櫡鑷姩淇闂幆椹卞姩锛堟湇鍔″櫒绔級
+/* run-v31-pilot.cjs — ForgeLoop v3.1 真实缺陷自动修复闭环驱动（服务器端）
  *
- * 鐢ㄦ硶锛? *   node tools/run-v31-pilot.cjs --phase parent  --evidence <parent-evidence.json> [--out <report.json>]
+ * 用法：
+ *   node tools/run-v31-pilot.cjs --phase parent  --evidence <parent-evidence.json> [--out <report.json>]
  *   node tools/run-v31-pilot.cjs --phase continue --attempt <attemptId> --evidence <child-evidence.json> [--out <report.json>]
  *   node tools/run-v31-pilot.cjs --state <attemptId>
  *
- * 涓ら樁娈佃璁★紙鐪熷疄閾撅級锛? *   parent 闃舵锛氱敤鐪熷疄璇佹嵁锛堝師濮?GLB root drift 86.8% + desktop-boy-02 VLM 0.2 critical锛夎嚜鍔ㄨ瘎浼?鈫?auto_rejected锛? *                鐒跺悗鑷姩鍒涘缓鐙珛瀛?Attempt/鏂?Job锛岀粡 gsy013 鐪熷疄 Blender 鎵ц normalize_root_translation.py
- *                鐢熸垚鏂?GLB锛涘洜娓告垙渚?staging 璇佹嵁锛堟棤 rotation-only 琛ヤ竵锛夋湭灏辩华锛屽瓙 Attempt 鍋滃湪 auto_evaluating銆? *   continue 闃舵锛氭父鎴忎晶 staging 鐑樼剻 + 鍥涘叧鍥炲綊 + 澶氳瑙掓埅鍥惧畬鎴愬悗锛屽甫鍏ㄩ噺澶栭儴璇佹嵁缁х画璇勪及瀛?Attempt
- *                鈫?auto_accepted锛堝叏閮ㄧ‖闂ㄧ + vlm_mean/min 杈炬爣 + 浼樹簬鐪熷疄鐖跺€欓€夛級鎴?auto_rejected 鈫?exhausted銆? *
- * 鐜鍙橀噺锛欴B_PATH锛堥粯璁ゅ伐鍘備粨搴撴牴 db.json锛夈€傛湇鍔″櫒閮ㄧ讲鐜鐢?supervisor 娉ㄥ叆 data/db.json銆? */
+ * 两阶段设计（真实链）：
+ *   parent 阶段：用真实证据（原始 GLB root drift 86.8% + desktop-boy-02 VLM 0.2 critical）自动评估 → auto_rejected；
+ *                然后自动创建独立子 Attempt/新 Job，经 gsy013 真实 Blender 执行 normalize_root_translation.py
+ *                生成新 GLB；因游戏侧 staging 证据（无 rotation-only 补丁）未就绪，子 Attempt 停在 auto_evaluating。
+ *   continue 阶段：游戏侧 staging 烘焙 + 四关回归 + 多视角截图完成后，带全量外部证据继续评估子 Attempt
+ *                → auto_accepted（全部硬门禁 + vlm_mean/min 达标 + 优于真实父候选）或 auto_rejected → exhausted。
+ *
+ * 环境变量：DB_PATH（默认工厂仓库根 db.json）。服务器部署环境由 supervisor 注入 data/db.json。
+ */
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -21,7 +27,7 @@ const learningDb = require(path.join(REPO_ROOT, 'server', 'db')).learningDb;
 const autoLoop = require(path.join(REPO_ROOT, 'server', 'auto-loop'));
 const { buildRootNormalizeCommand, parseRootNormalizeReport, runRemote, BLENDER_PATH } = require(path.join(REPO_ROOT, 'server', 'repair-executor'));
 
-// 绠€鍗曞弬鏁拌В鏋愶紙涓嶅紩鍏ラ澶栦緷璧栵級
+// 简单参数解析（不引入额外依赖）
 const _argv = process.argv.slice(2);
 function argVal(name) {
     const i = _argv.indexOf(`--${name}`);
@@ -32,10 +38,10 @@ const evidencePath = argVal('evidence');
 const attemptId = argVal('attempt') || argVal('state');
 const outPath = argVal('out');
 
-// ---------- 鐪熷疄 gsy013 淇鎵ц鍣細animation.root_translation_normalization 鈫?normalize_root_translation.py ----------
+// ---------- 真实 gsy013 修复执行器：animation.root_translation_normalization → normalize_root_translation.py ----------
 async function realRepair(child, variable, job) {
     if (!variable || variable.param !== 'animation.root_translation_normalization') {
-        return { error: { message: `v3.1 鐪熷疄閾句粎鏀寔 root_translation_normalization锛屽疄闄?${variable && variable.param}` } };
+        return { error: { message: `v3.1 真实链仅支持 root_translation_normalization，实际 ${variable && variable.param}` } };
     }
     const inputGlb = child.evidence?.raw_generic_glb?.glb_file
         || child.evidence?.artifacts?.glb_file
@@ -49,22 +55,23 @@ async function realRepair(child, variable, job) {
     const built = buildRootNormalizeCommand({ targetGlb: inputGlb, action, outGlb, reportOut: normReportPath });
     const normRes = runRemote(built);
     if (normRes.exitCode !== 0) {
-        return { error: { message: `normalize_root_translation 澶辫触 exit=${normRes.exitCode}: ${String(normRes.stderr || '').slice(0, 900)}` } };
+        return { error: { message: `normalize_root_translation 失败 exit=${normRes.exitCode}: ${String(normRes.stderr || '').slice(0, 900)}` } };
     }
     let rootNorm = null;
     try { rootNorm = parseRootNormalizeReport(normRes.stdout, normRes.stderr, normReportPath); }
-    catch (e) { return { error: { message: `瑙ｆ瀽 root-norm 鎶ュ憡澶辫触: ${e.message}` } }; }
+    catch (e) { return { error: { message: `解析 root-norm 报告失败: ${e.message}` } }; }
 
-    // 瀹屾暣鍔ㄧ敾闂ㄧ澶嶆祴锛坓sy013 鐪熷疄 analyze_animation.py锛?    const animCmd = `cd /workspace/projects/forge3d && ${BLENDER_PATH} --background --python blender/analyze_animation.py -- --input ${outGlb} --action ${action} --output ${animReportPath}`;
+    // 完整动画门禁复测（gsy013 真实 analyze_animation.py）
+    const animCmd = `cd /workspace/projects/forge3d && ${BLENDER_PATH} --background --python blender/analyze_animation.py -- --input ${outGlb} --action ${action} --output ${animReportPath}`;
     const animRes = runRemote({ host: 'gsy013', command: animCmd });
     let animReport = null;
     if (animRes.exitCode === 0) {
-        try { animReport = JSON.parse(runRemote({ host: 'gsy013', command: `cat ${animReportPath}` }).stdout); } catch (_) { /* 鎶ュ憡瑙ｆ瀽澶辫触涓嶈嚧鍛?*/ }
+        try { animReport = JSON.parse(runRemote({ host: 'gsy013', command: `cat ${animReportPath}` }).stdout); } catch (_) { /* 报告解析失败不致命 */ }
     }
 
     const shaRes = runRemote({ host: 'gsy013', command: `sha256sum ${outGlb}` });
     const glbSha = shaRes.exitCode === 0 ? String(shaRes.stdout || '').trim().split(/\s+/)[0] : null;
-    if (!glbSha) return { error: { message: '鏃犳硶鍙栧緱鏂?GLB SHA-256' } };
+    if (!glbSha) return { error: { message: '无法取得新 GLB SHA-256' } };
 
     const pq = animReport?.pose_quality || {};
     const afterRatio = pq.max_root_translation_ratio ?? rootNorm.after?.max_root_translation_ratio ?? null;
@@ -91,18 +98,18 @@ async function realRepair(child, variable, job) {
     };
 }
 
-// ---------- 璇佹嵁鍔犺浇 ----------
+// ---------- 证据加载 ----------
 function loadEvidence(p) {
     const raw = fs.readFileSync(p, 'utf8');
     return JSON.parse(raw);
 }
 
-// evaluate 鍥炶皟锛氫紭鍏堣鍙栬 Attempt 宸蹭笂浼犵殑鏈€鏂板閮ㄨ瘉鎹紝鍚﹀垯鍥為€€鐖惰瘉鎹腑鐨?external
+// evaluate 回调：优先读取该 Attempt 已上传的最新外部证据，否则回退父证据中的 external
 function makeEvaluate(evidenceJson, attemptId) {
     const evPath = `/tmp/v31-evidence/${attemptId}.json`;
     return async (attempt) => {
         const ext = { ...(evidenceJson.external || {}), samples: undefined };
-        // 澶栭儴璇佹嵁锛堟父鎴忎晶 staging 缁撴灉锛夎嫢宸蹭笂浼犲垯瑕嗙洊
+        // 外部证据（游戏侧 staging 结果）若已上传则覆盖
         if (fs.existsSync(evPath)) {
             const up = JSON.parse(fs.readFileSync(evPath, 'utf8'));
             return { ...ext, ...(up.external || {}), ...up };
@@ -150,13 +157,13 @@ async function main() {
     const policy = POLICY_V1.animation;
     console.log(JSON.stringify({ policy: { domain: 'animation', version: policy.version, scoring: policy.scoring, critical_labels: policy.critical_labels, thresholds: policy.thresholds } }));
 
-    const phase = phase || 'parent';
-    if (attemptId) { printAttempt(attemptId); return; }
+    if (attemptId && phase !== 'parent' && phase !== 'continue') { printAttempt(attemptId); return; }
 
     if (phase === 'parent') {
         const evidenceJson = loadEvidence(evidencePath);
         const parent = createOrGetParent(evidenceJson);
-        // 鐖?Attempt锛氱敤鐪熷疄璇佹嵁璇勪及锛坮eopen 寮哄埗閲嶈瘎锛岄槻姝㈠鐢ㄦ棫 auto_evaluation锛?        learningDb.saveAutoEvaluation(parent.id, { external: evidenceJson.external || {}, reopen: true });
+        // 父 Attempt：用真实证据评估（reopen 强制重评，防止复用旧 auto_evaluation）
+        learningDb.saveAutoEvaluation(parent.id, { external: evidenceJson.external || {}, reopen: true });
         const result = await autoLoop.runAutoIteration(parent.id, {
             ownerId: evidenceJson.owner_id || 'forge-loop-v31',
             evaluate: makeEvaluate(evidenceJson, parent.id),
@@ -174,31 +181,32 @@ async function main() {
         };
         console.log('---V31-REPORT---');
         console.log(JSON.stringify(report, null, 2));
+        if (outPath) fs.writeFileSync(outPath, JSON.stringify(report, null, 2));
         return;
     }
 
     if (phase === 'continue') {
-        const attemptId = attemptId;
+        const targetAttemptId = attemptId;
         const evidenceJson = loadEvidence(evidencePath);
-        const attempt = learningDb.findAttemptById(attemptId);
-        if (!attempt) { console.log(JSON.stringify({ error: 'attempt not found', attemptId })); process.exit(1); }
-        // 瀛?Attempt锛氬啓鍏ユ父鎴忎晶 staging 澶栭儴璇佹嵁锛坮eopen 寮哄埗閲嶈瘎锛?        learningDb.saveAutoEvaluation(attemptId, { external: evidenceJson.external || {}, reopen: true, game_side_evidence: evidenceJson.evidence || {} });
-        // 涓婁紶鐨勫閮ㄨ瘉鎹枃浠朵篃钀界洏锛屼緵 evaluate 鍥炶皟璇诲彇
+        const attempt = learningDb.findAttemptById(targetAttemptId);
+        if (!attempt) { console.log(JSON.stringify({ error: 'attempt not found', attemptId: targetAttemptId })); process.exit(1); }
+        // 子 Attempt：写入游戏侧 staging 外部证据（reopen 强制重评）
+        learningDb.saveAutoEvaluation(targetAttemptId, { external: evidenceJson.external || {}, reopen: true, game_side_evidence: evidenceJson.evidence || {} });
         fs.mkdirSync('/tmp/v31-evidence', { recursive: true });
-        fs.writeFileSync(`/tmp/v31-evidence/${attemptId}.json`, JSON.stringify(evidenceJson, null, 2));
-        const result = await autoLoop.runAutoIteration(attemptId, {
+        fs.writeFileSync(`/tmp/v31-evidence/${targetAttemptId}.json`, JSON.stringify(evidenceJson, null, 2));
+        const result = await autoLoop.runAutoIteration(targetAttemptId, {
             ownerId: attempt.owner_id,
-            evaluate: makeEvaluate(evidenceJson, attemptId),
+            evaluate: makeEvaluate(evidenceJson, targetAttemptId),
             repair: null
         });
-        printAttempt(attemptId);
-        const report = { phase: 'continue', ok: result.ok, state: result.state, reason: result.reason || null, attempt_id: attemptId, result };
+        printAttempt(targetAttemptId);
+        const report = { phase: 'continue', ok: result.ok, state: result.state, reason: result.reason || null, attempt_id: targetAttemptId, result };
         console.log('---V31-REPORT---');
         console.log(JSON.stringify(report, null, 2));
-        if (outPath) fs.writeFileSync(outPath, JSON.stringify({ phase, report, attempt: attemptId }, null, 2));
+        if (outPath) fs.writeFileSync(outPath, JSON.stringify(report, null, 2));
         return;
     }
-    console.log(JSON.stringify({ error: '鏈煡 phase: ' + phase }));
+    console.log(JSON.stringify({ error: '未知 phase: ' + phase }));
     process.exit(1);
 }
 
