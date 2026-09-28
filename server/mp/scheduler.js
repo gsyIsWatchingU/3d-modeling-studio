@@ -231,10 +231,17 @@ class MpScheduler {
         // 6b. 启动 paint（远端提交）
         const paintTask = first('paint');
         if (paintTask && paintTask.status === TASK_STATUS.QUEUED) {
-            this.startPaint(parent, paintTask).catch(e => {
-                console.error(`[MP调度] paint 提交失败 ${paintTask.id}: ${e.message}`);
-                this.retryPaint(paintTask, e);
-            });
+            // 幂等：若已有远端任务（应用重启/重试后任务重新入队），只恢复轮询，
+            // 不重复提交远端 Paint，避免同一 mesh 在 L20 排队多次消耗 GPU。
+            if (paintTask.remoteJobId) {
+                this.store.startRemoteTask(paintTask.id, paintTask.remoteJobId);
+                this.log(`父任务 ${parent.id} paint 恢复轮询远端任务 ${paintTask.remoteJobId}`);
+            } else {
+                this.startPaint(parent, paintTask).catch(e => {
+                    console.error(`[MP调度] paint 提交失败 ${paintTask.id}: ${e.message}`);
+                    this.retryPaint(paintTask, e);
+                });
+            }
         }
 
         // 7. 单轨阶段链（paint 之后）
@@ -357,6 +364,9 @@ class MpScheduler {
         });
     }
 
+    // 连续轮询错误计数（瞬态 ssh/网络错误不立即判失败，避免重复提交远端任务）
+    pollErrors = new Map();
+
     async pollPaints() {
         const parents = this.store.listParents(undefined, 500);
         for (const parent of parents) {
@@ -365,7 +375,18 @@ class MpScheduler {
             if (!paintTask) continue;
             try {
                 const remote = await this.paint.pollPaint(paintTask.remoteJobId);
-                if (remote.done) {
+                this.pollErrors.delete(paintTask.id);
+                if (remote.done && remote.state === 'failed') {
+                    // 远端任务已失败：清除 remoteJobId，按退避重试提交新远端任务（有限次）
+                    const exhausted = paintTask.attempt >= paintTask.maxAttempts;
+                    this.store.updateTask(paintTask.id, {
+                        status: exhausted ? TASK_STATUS.DEAD_LETTER : TASK_STATUS.RETRY_WAIT,
+                        remoteJobId: null,
+                        error: { code: 'paint_remote_failed', message: String(remote.error || '远端 Paint 失败').slice(0, 800) },
+                        nextRunAt: exhausted ? undefined : new Date(Date.now() + Math.min(600000, 30000 * (2 ** Math.max(0, paintTask.attempt - 1)))).toISOString()
+                    });
+                    this.log(`父任务 ${parent.id} paint 远端失败（${paintTask.remoteJobId}）${exhausted ? '，重试耗尽' : '，进入退避重试'}`);
+                } else if (remote.done) {
                     const outputPath = this.artifacts.artifactPath(parent.id, paintTask.id, 'textured.glb');
                     const downloaded = await this.paint.downloadRemoteArtifact(remote.outputPath, outputPath);
                     this.store.finishRemoteTask(paintTask.id, {
@@ -374,13 +395,21 @@ class MpScheduler {
                         metrics: { remoteState: remote.state, elapsed_seconds: 0, remoteMetrics: remote.metrics }
                     });
                     this.log(`父任务 ${parent.id} paint 完成（远端 ${paintTask.remoteJobId}，SHA ${downloaded.sha256.slice(0, 12)}）`);
-                } else if (Date.now() - new Date(paintTask.updated_at).getTime() > PAINT_REMOTE_TIMEOUT_MS) {
+                } else if (!['queued', 'pending'].includes(remote.state)
+                    && Date.now() - new Date(paintTask.updated_at).getTime() > PAINT_REMOTE_TIMEOUT_MS) {
+                    // 远端仍在队列等待 L20（不抢占既有任务）时不计算超时；只有已开始且超时才失败
                     this.store.failRemoteTask(paintTask.id, { code: 'paint_timeout', message: '远端 Paint 任务超时' });
                     this.log(`父任务 ${parent.id} paint 超时（远端 ${paintTask.remoteJobId}）`);
                 }
             } catch (e) {
                 console.error(`[MP调度] paint 轮询失败 ${paintTask.id}: ${e.message}`);
-                this.store.failRemoteTask(paintTask.id, { code: 'paint_poll_error', message: String(e.message).slice(0, 800) });
+                const streak = (this.pollErrors.get(paintTask.id) || 0) + 1;
+                if (streak >= 3) {
+                    this.pollErrors.delete(paintTask.id);
+                    this.store.failRemoteTask(paintTask.id, { code: 'paint_poll_error', message: String(e.message).slice(0, 800) });
+                } else {
+                    this.pollErrors.set(paintTask.id, streak);
+                }
             }
         }
     }

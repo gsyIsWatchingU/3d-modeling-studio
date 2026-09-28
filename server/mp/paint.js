@@ -80,7 +80,7 @@ async function submitPaint({ parentId, taskId, meshPath, materialPath, params })
         '-F', `profile=${params.profile}`,
         '-F', `prompt=${String(params.prompt || '').slice(0, 1500)}`,
         '-F', `seed=${params.seed ?? 1234}`,
-        ...(cfg.token ? ['-H', `X-Forge3D-Token: ${cfg.token}`] : [])
+        ...(cfg.token ? [`-H`, `'X-Forge3D-Token: ${cfg.token}'`] : [])
     ].join(' ');
     const full = `${curl}${materialArg}`;
     const stdout = await remoteExec(full);
@@ -106,7 +106,10 @@ async function pollPaint(jobId) {
     let data;
     try { data = JSON.parse(stdout); } catch { throw new Error('Paint 轮询返回了无法解析的内容'); }
     const state = String(data.state || data.status || '').toLowerCase();
-    if (['failed', 'error'].includes(state)) throw new Error(data.error || '远端 Paint 任务失败');
+    if (['failed', 'error'].includes(state)) {
+        // 远端任务已确定失败：返回 done+failed，由调度器决定重试（会清除 remoteJobId 重新提交）
+        return { done: true, state, error: data.error || '远端 Paint 任务失败' };
+    }
     if (['review', 'completed', 'approved'].includes(state)) {
         const outputKey = ['pbr_mesh', 'generated_mesh', 'game_asset'].find(k => data.outputs?.[k]);
         if (!outputKey) throw new Error('远端 Paint 完成但没有输出产物');
