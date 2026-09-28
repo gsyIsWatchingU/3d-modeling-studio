@@ -192,8 +192,10 @@ function createMpRouter({ uploadDir }) {
 
     // ---------- Worker 端 ----------
     router.get('/worker/poll', requireWorker, (req, res) => {
-        const capability = String(req.query.capability || '');
-        if (!capability) return res.status(400).json({ success: false, error: '缺少 capability' });
+        // capabilities: 逗号分隔的能力列表（如 shape:t4,rig:t4,animation:t4），按顺序尝试领取
+        const capabilities = String(req.query.capabilities || req.query.capability || '')
+            .split(',').map(s => s.trim()).filter(Boolean);
+        if (!capabilities.length) return res.status(400).json({ success: false, error: '缺少 capabilities' });
         const worker = {
             id: String(req.query.worker || 'unknown'),
             host: String(req.query.host || 'unknown'),
@@ -201,9 +203,11 @@ function createMpRouter({ uploadDir }) {
             gpuIndex: req.query.gpu_index !== undefined ? Number(req.query.gpu_index) : null,
             leaseTtlMs: LEASE_TTL_MS
         };
-        const task = store.claimNext(capability, worker);
-        if (!task) return res.json({ success: true, data: null });
-        res.json({ success: true, data: publicTask(task) });
+        for (const capability of capabilities) {
+            const task = store.claimNext(capability, worker);
+            if (task) return res.json({ success: true, data: publicTask(task) });
+        }
+        res.json({ success: true, data: null });
     });
 
     router.post('/worker/tasks/:id/heartbeat', requireWorker, (req, res) => {

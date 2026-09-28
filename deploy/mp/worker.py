@@ -144,6 +144,8 @@ def env_base(args, gpu_index: int | None) -> dict:
     env.setdefault("FORGE3D_MODEL_ROOT", "/workspace/models/forge3d")
     env.setdefault("FORGE3D_DATA_ROOT", "/workspace/3d-assets")
     env.setdefault("FORGE3D_BLENDER", "/workspace/.tools/blender/blender")
+    env.setdefault("FORGE3D_HUNYUAN_PYTHON", "/workspace/runtime/hunyuan3d/bin/python")
+    env.setdefault("FORGE3D_UNIRIG_PYTHON", "/workspace/runtime/unirig/bin/python")
     env.setdefault("HF_HOME", "/workspace/models/forge3d/huggingface")
     env.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
     env.setdefault("HY3DGEN_MODELS", "/workspace/models/forge3d/hy3dgen")
@@ -419,7 +421,7 @@ def execute_stage(args, task: dict, workdir: Path, monitor: VramMonitor, log_lin
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--capability", required=True)
+    parser.add_argument("--capabilities", required=True, help="逗号分隔的能力列表，如 shape:t4,rig:t4,animation:t4")
     parser.add_argument("--api-url", required=True)
     parser.add_argument("--token", required=True)
     parser.add_argument("--host", default="unknown")
@@ -429,14 +431,19 @@ def main() -> int:
     parser.add_argument("--stage-timeout", type=int, default=3600)
     args = parser.parse_args()
 
+    capabilities = [c.strip() for c in args.capabilities.split(",") if c.strip()]
+    if not capabilities:
+        print("capabilities 为空", file=sys.stderr)
+        return 2
+
     work_root = Path(args.work_dir)
     work_root.mkdir(parents=True, exist_ok=True)
-    print(f"[worker {args.capability}] 启动 host={args.host} gpu={args.gpu_index}", flush=True)
+    print(f"[worker {','.join(capabilities)}] 启动 host={args.host} gpu={args.gpu_index}", flush=True)
 
     while True:
         try:
             poll = http_json("GET", f"{args.api_url}/api/mp/worker/poll"
-                              f"?capability={urllib.parse.quote(args.capability)}"
+                              f"?capabilities={urllib.parse.quote(args.capabilities)}"
                               f"&worker={urllib.parse.quote(args.host)}"
                               f"&host={urllib.parse.quote(args.host)}"
                               f"&gpu_index={args.gpu_index or ''}"
@@ -444,7 +451,7 @@ def main() -> int:
                              args.token, timeout=30)
             task = (poll.get("data") or {}).get("id") and poll.get("data") or None
         except Exception as exc:
-            print(f"[worker {args.capability}] 轮询失败: {exc}", flush=True)
+            print(f"[worker {args.capabilities}] 轮询失败: {exc}", flush=True)
             time.sleep(POLL_EVERY)
             continue
         if not task:
@@ -487,7 +494,7 @@ def main() -> int:
                                     args.token, fields, files)
             if not resp.get("success"):
                 raise StageError(f"complete 被拒: {resp.get('error')}")
-            print(f"[worker {args.capability}] 任务 {task_id} 完成 {elapsed}s", flush=True)
+            print(f"[worker {args.capabilities}] 任务 {task_id} 完成 {elapsed}s", flush=True)
         except Exception as exc:
             monitor.stop = True
             vram = monitor.report()
@@ -498,10 +505,10 @@ def main() -> int:
                                               "code": "stage_error" if not isinstance(exc, StageError) else "stage_failed"},
                                  timeout=30)
                 if not resp.get("success"):
-                    print(f"[worker {args.capability}] fail 被拒: {resp.get('error')}", flush=True)
+                    print(f"[worker {args.capabilities}] fail 被拒: {resp.get('error')}", flush=True)
             except Exception as exc2:
-                print(f"[worker {args.capability}] fail 上报失败: {exc2}", flush=True)
-            print(f"[worker {args.capability}] 任务 {task_id} 失败: {error[:300]}", flush=True)
+                print(f"[worker {args.capabilities}] fail 上报失败: {exc2}", flush=True)
+            print(f"[worker {args.capabilities}] 任务 {task_id} 失败: {error[:300]}", flush=True)
         finally:
             import shutil
             shutil.rmtree(workdir, ignore_errors=True)

@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # 启动单个 Multi-GPU 阶段 Worker（T4 或 CPU）。
 # 用法:
-#   worker.sh <capability> <gpu-index|-> [--api-url URL] [--token TOK] [--stage-timeout S]
+#   worker.sh <capabilities(逗号分隔)> <gpu-index|-> [--stage-timeout S]
+#   capabilities 示例: GPU -> shape:t4,rig:t4,animation:t4
+#                     CPU -> draft_preview:t4,candidate_qc:t4,normalize:t4,export:t4,preview:t4,validate:t4
 set -euo pipefail
 
-CAP="$1"
+CAPS="$1"
 GPU_INDEX="${2:--}"
 API_URL="${MP_API_URL:-http://10.42.0.166:3300}"
 TOKEN="${MP_WORKER_TOKEN:-}"
@@ -18,7 +20,7 @@ if [[ -z "$TOKEN" ]]; then
 fi
 
 mkdir -p "$WORK_DIR" "$LOG_DIR"
-PY="${MP_PYTHON:-/workspace/runtime/python/bin/python3}"
+PY="${MP_PYTHON:-/workspace/runtime/hunyuan3d/bin/python}"
 WORKER_PY="$(dirname "$0")/worker.py"
 
 GPU_ARGS=()
@@ -30,11 +32,11 @@ fi
 
 HOST="$(hostname)"
 exec "$PY" "$WORKER_PY" \
-  --capability "$CAP" \
+  --capabilities "$CAPS" \
   --api-url "$API_URL" \
   --token "$TOKEN" \
   --host "$HOST" \
   --work-dir "$WORK_DIR" \
   --stage-timeout "$STAGE_TIMEOUT" \
   ${GPU_ARGS[@]+"${GPU_ARGS[@]}"} \
-  > "$LOG_DIR/${CAP//:/_}.$GPU_TAG.log" 2>&1
+  > "$LOG_DIR/${CAPS%%:*}.$GPU_TAG.log" 2>&1

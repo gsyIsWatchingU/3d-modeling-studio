@@ -70,6 +70,28 @@
                             <select id="profileSelect"></select>
                         </div>
                     </div>
+                    <fieldset class="mp-options" id="mpOptions" hidden>
+                        <legend>并行建模 <small>多卡实验</small></legend>
+                        <div class="two-columns">
+                            <div class="form-group">
+                                <label for="mpModeSelect">模式</label>
+                                <select id="mpModeSelect">
+                                    <option value="single">单任务（默认串行）</option>
+                                    <option value="candidate_race">多候选并行（同一资产最多 4 个 seed 竞速）</option>
+                                    <option value="parallel_assets">多资产并行</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="mpCandidateCount">候选数量</label>
+                                <input type="number" id="mpCandidateCount" min="1" max="4" value="4">
+                            </div>
+                            <div class="form-group">
+                                <label for="mpSeed">随机种子</label>
+                                <input type="number" id="mpSeed" min="0" max="4294967295" value="20260928">
+                            </div>
+                        </div>
+                        <p class="step-copy" id="mpHint">候选竞速会并行生成多个 Shape 候选，自动质检后由你手动选择进入 PBR 贴图；只有明确批准才进入正式资产目录。</p>
+                    </fieldset>
                     <div class="form-group">
                         <label for="productionPlanSelect">关联制作计划 <span>可选</span></label>
                         <select id="productionPlanSelect"><option value="">独立建模</option></select>
@@ -139,6 +161,7 @@
                     </ol>
                     <p class="progress-message" id="progressMessage">完成左侧三步后，任务状态会显示在这里。</p>
                     <button class="btn compact retry-btn" id="retryJobBtn" type="button" hidden>重新尝试</button>
+                    <div id="mpPanel" hidden></div>
                 </section>
             </main>
 

@@ -367,7 +367,7 @@ class MpScheduler {
                 const remote = await this.paint.pollPaint(paintTask.remoteJobId);
                 if (remote.done) {
                     const outputPath = this.artifacts.artifactPath(parent.id, paintTask.id, 'textured.glb');
-                    const downloaded = await this.paint.downloadRemoteArtifact(remote.downloadUrl, outputPath);
+                    const downloaded = await this.paint.downloadRemoteArtifact(remote.outputPath, outputPath);
                     this.store.finishRemoteTask(paintTask.id, {
                         outputArtifacts: [{ key: 'mesh', fileName: 'textured.glb', sha256: downloaded.sha256, bytes: downloaded.bytes, path: `/api/mp/artifacts/${parent.id}/${paintTask.id}/textured.glb` }],
                         outputShas: [downloaded.sha256],

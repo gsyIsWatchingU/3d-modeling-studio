@@ -23,8 +23,122 @@ const statusLabels = {
     downloading: '保存中',
     validating: '校验中',
     succeeded: '已完成',
-    failed: '失败'
+    failed: '失败',
+    running: '运行中',
+    review: '待人工审片',
+    completed: '已完成',
+    cancelled: '已取消',
+    dead_letter: '死信'
 };
+
+// ---------- 并行建模（Multi-GPU） ----------
+const mpStatusLabels = {
+    queued: '排队中', leased: '已租约', running: '运行中', retry_wait: '等待重试',
+    waiting_remote: '远端运行', review: '审片', completed: '完成',
+    failed: '失败', dead_letter: '死信', cancelled: '已取消'
+};
+
+async function loadMpJobs() {
+    try {
+        return await api('/mp/jobs?limit=20');
+    } catch { return []; }
+}
+
+function mpStageLabel(stage) {
+    return { prepare: '准备', shape: 'Shape 网格', draft_preview: '草稿预览', candidate_qc: '候选质检',
+        select: '选择候选', paint: 'PBR 贴图(L20)', normalize: '规范化', rig: 'UniRig 绑骨',
+        retarget_animation: '动作重定向', export: 'GLB 导出', render_preview: '预览渲染',
+        validate: '自动质检', review: '人工审片' }[stage] || stage;
+}
+
+async function renderMpPanel(parentId) {
+    const panel = document.getElementById('mpPanel');
+    if (!panel) return;
+    let parent;
+    try { parent = await api(`/mp/jobs/${encodeURIComponent(parentId)}`); }
+    catch (error) { panel.hidden = true; return; }
+    panel.hidden = false;
+    panel.replaceChildren();
+    const head = document.createElement('div');
+    head.className = 'mp-panel-head';
+    const meta = document.createElement('p');
+    meta.textContent = `${parent.mode === 'parallel_assets' ? '多资产并行' : parent.mode === 'candidate_race' ? '多候选并行' : '单任务'} · ${parent.assetKind} · 候选 ${parent.candidateCount} · 审片：${parent.humanReviewStatus}`;
+    head.append(meta);
+    panel.append(head);
+
+    if (parent.candidates?.length) {
+        const cand = document.createElement('div');
+        cand.className = 'mp-candidates';
+        const title = document.createElement('strong');
+        title.textContent = '候选（Shape 草稿，自动评分仅排序）';
+        cand.append(title);
+        const row = document.createElement('div');
+        row.className = 'mp-candidate-row';
+        for (const c of parent.candidates) {
+            const card = document.createElement('div');
+            card.className = `mp-candidate${c.candidateKey === parent.selectedCandidateId ? ' selected' : ''}`;
+            const img = document.createElement('img');
+            img.src = c.preview || '';
+            img.alt = `候选 ${c.candidateKey}`;
+            const info = document.createElement('p');
+            const rank = (parent.autoRank || []).find(r => r.candidateKey === c.candidateKey);
+            info.textContent = `${c.candidateKey} · seed ${c.seed}${rank ? ` · 评分 ${rank.score}${rank.passed ? '（通过）' : '（未通过）'}` : ''}`;
+            card.append(img, info);
+            if (!parent.selectedCandidateId && c.qc) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'btn compact';
+                btn.textContent = '选择此候选';
+                btn.addEventListener('click', async () => {
+                    try { await api(`/mp/jobs/${encodeURIComponent(parentId)}/select`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ candidateKey: c.candidateKey }) }); await loadJobs(true); } catch (e) { showToast(e.message, true); }
+                });
+                card.append(btn);
+            }
+            row.append(card);
+        }
+        cand.append(row);
+        panel.append(cand);
+    }
+
+    const stages = document.createElement('div');
+    stages.className = 'mp-stages';
+    for (const group of parent.children || []) {
+        const block = document.createElement('div');
+        block.className = 'mp-stage-block';
+        const label = document.createElement('strong');
+        label.textContent = mpStageLabel(group.stage);
+        block.append(label);
+        for (const task of group.tasks) {
+            const line = document.createElement('p');
+            line.className = `mp-task-line ${task.status}`;
+            line.textContent = `${task.id} · ${mpStatusLabels[task.status] || task.status} · ${task.host || '—'}${task.gpuIndex != null ? ` · GPU${task.gpuIndex}` : ''}${task.seed != null ? ` · seed ${task.seed}` : ''}${task.attempt > 1 ? ` · 第${task.attempt}次尝试` : ''}${task.error ? ` · ${task.error.message}` : ''}${task.metrics?.peak_vram_mb ? ` · 峰值显存 ${Math.round(task.metrics.peak_vram_mb / 1024)}GB` : ''}${task.metrics?.elapsed_seconds ? ` · ${Math.round(task.metrics.elapsed_seconds)}s` : ''}`;
+            block.append(line);
+        }
+        stages.append(block);
+    }
+    panel.append(stages);
+
+    if (parent.status === 'review') {
+        const actions = document.createElement('div');
+        actions.className = 'mp-actions';
+        const approve = document.createElement('button');
+        approve.type = 'button';
+        approve.className = 'btn primary compact';
+        approve.textContent = '批准进入正式资产';
+        approve.addEventListener('click', async () => {
+            try { await api(`/mp/jobs/${encodeURIComponent(parentId)}/approve`, { method: 'POST' }); showToast('已批准'); await loadJobs(true); } catch (e) { showToast(e.message, true); }
+        });
+        const reject = document.createElement('button');
+        reject.type = 'button';
+        reject.className = 'btn compact';
+        reject.textContent = '否决';
+        reject.addEventListener('click', async () => {
+            try { await api(`/mp/jobs/${encodeURIComponent(parentId)}/reject`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: '人工审片否决' }) }); showToast('已否决'); await loadJobs(true); } catch (e) { showToast(e.message, true); }
+        });
+        actions.append(approve, reject);
+        panel.append(actions);
+    }
+}
 
 async function api(path, options = {}) {
     const response = await fetch(`${API_BASE}${path}`, options);
@@ -429,6 +543,18 @@ async function renderActiveJob() {
         retry.hidden = true;
         return;
     }
+    if (String(job.id).startsWith('MP-')) {
+        document.querySelector('#progressSteps').style.display = 'none';
+        title.textContent = `${job.id} · ${job.name}`;
+        chip.textContent = statusLabels[job.status] || job.status;
+        chip.className = `status-chip ${job.status}`;
+        message.textContent = job.error?.message || (job.status === 'review' ? '等待人工审片：请在下方选择候选并批准。' : '正在并行处理各阶段');
+        retry.hidden = true;
+        document.getElementById('skillExecution')?.replaceChildren();
+        await renderMpPanel(job.id);
+        return;
+    }
+    document.querySelector('#progressSteps').style.display = '';
     title.textContent = `${job.id} · ${job.name}`;
     chip.textContent = statusLabels[job.status] || job.status;
     chip.className = `status-chip ${job.status}`;
@@ -491,7 +617,8 @@ async function loadJobs(silent = false) {
     if (state.polling) return;
     state.polling = true;
     try {
-        state.jobs = await api('/jobs?limit=40');
+        const [legacy, mp] = await Promise.all([api('/jobs?limit=40'), loadMpJobs()]);
+        state.jobs = [...mp, ...legacy].slice(0, 60);
         if (!state.activeJobId && state.jobs.length) state.activeJobId = state.jobs[0].id;
         renderJobList();
         await renderActiveJob();
@@ -521,7 +648,23 @@ async function submitJob() {
     form.append('inline_skill', document.getElementById('inlineSkillInput').value);
     const channels = [...document.querySelectorAll('.channel-input:checked')].map(input => input.value);
     form.append('channels', JSON.stringify(channels));
+    const mpModeEl = document.getElementById('mpOptions')?.hidden ? null : document.getElementById('mpModeSelect');
+    const mpMode = mpModeEl ? mpModeEl.value : 'single';
     try {
+        if (mpMode !== 'single') {
+            form.append('mode', mpMode);
+            form.append('candidate_count', document.getElementById('mpCandidateCount').value);
+            form.append('seed', document.getElementById('mpSeed').value);
+            const response = await fetch(`${API_BASE}/mp/jobs`, { method: 'POST', body: form });
+            const payload = await response.json();
+            if (!response.ok || payload.success === false) throw new Error(payload.error || '并行任务提交失败');
+            const job = payload.data;
+            state.jobs.unshift(job);
+            await selectJob(job.id);
+            showToast(`并行任务 ${job.id} 已提交，可以关闭页面等待通知`);
+            await loadJobs(true);
+            return;
+        }
         const response = await fetch(`${API_BASE}/jobs`, { method: 'POST', body: form });
         const payload = await response.json();
         if (!response.ok || payload.success === false) throw new Error(payload.error || '任务提交失败');
@@ -727,6 +870,15 @@ async function init() {
     bindEvents();
     try {
         await reloadBootstrap();
+        try {
+            const health = await api('/health');
+            const mpOptions = document.getElementById('mpOptions');
+            if (mpOptions) mpOptions.hidden = !health.mp_enabled;
+            if (health.mp_enabled) {
+                const hint = document.getElementById('mpHint');
+                if (hint) hint.textContent = health.mp_paint_configured ? '多卡并行已就绪：候选竞速会并行生成多个 Shape 候选，自动质检后由你手动选择进入 PBR 贴图；只有明确批准才进入正式资产目录。' : '多卡并行已启用，但 L20 Paint 尚未配置。';
+            }
+        } catch { /* health 不可用时保持隐藏 */ }
         await loadProductionPlans(new URLSearchParams(location.search).get('plan') || '');
         await importTransferredReferences();
         await loadJobs();

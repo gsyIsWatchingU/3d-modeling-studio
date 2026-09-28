@@ -240,6 +240,28 @@ input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--pixel-gr
 .progress-message { margin: 0; color: var(--pixel-ink-secondary); font-size: 11px; }
 .retry-btn { margin-top: 8px; }
 
+/* ---- 并行建模（Multi-GPU）面板 ---- */
+.mp-options { margin-top: 12px; padding: 10px; border: 2px solid var(--pixel-ink); background: var(--pixel-green-hover); }
+.mp-options legend { padding: 0 6px; font-weight: 800; }
+.mp-options legend small { font-weight: 400; }
+#mpPanel { margin-top: 10px; border-top: 2px dashed var(--pixel-border-soft); padding-top: 10px; }
+.mp-panel-head { margin-bottom: 8px; }
+.mp-candidates { margin-bottom: 10px; }
+.mp-candidate-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.mp-candidate { flex: 0 0 96px; border: 2px solid var(--pixel-border-soft); background: var(--pixel-surface); }
+.mp-candidate.selected { border-color: var(--pixel-green-strong); background: var(--pixel-green-hover); }
+.mp-candidate img { width: 100%; height: 84px; object-fit: contain; display: block; background: #eee; }
+.mp-candidate p { margin: 4px; font-size: 9px; color: var(--pixel-ink-secondary); }
+.mp-candidate .btn { margin: 4px; width: calc(100% - 8px); }
+.mp-stages { display: grid; gap: 6px; }
+.mp-stage-block { border: 1px solid var(--pixel-border-soft); padding: 6px 8px; }
+.mp-stage-block strong { font-size: 10px; }
+.mp-task-line { margin: 3px 0 0; font-size: 9px; color: var(--pixel-ink-secondary); }
+.mp-task-line.completed, .mp-task-line.approved { color: var(--pixel-green-strong); }
+.mp-task-line.failed, .mp-task-line.dead_letter { color: var(--pixel-danger); }
+.mp-task-line.running, .mp-task-line.leased { color: var(--pixel-ink); font-weight: 700; }
+.mp-actions { display: flex; gap: 8px; margin-top: 10px; }
+
 .history-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
 .history-head h2 { margin: 2px 0 0; font-size: 15px; }
 .job-list { display: grid; gap: 8px; }
