@@ -235,6 +235,10 @@ async def create_paint_job(
     mesh_suffix = Path(mesh.filename or "").suffix.lower()
     if mesh_suffix != ".glb":
         raise HTTPException(415, "paint 只接受 .glb 网格")
+    # paint-only 任务必须带参考图：Hunyuan3D Paint 需要以参考图为 image 输入，
+    # 缺省时流水线会把 source.glb（网格）误当 image 传入，必然失败。
+    if material_source is None:
+        raise HTTPException(400, "paint 必须提供 material_source 参考图")
 
     job_id = uuid4().hex
     job_dir = settings.jobs_root / job_id
