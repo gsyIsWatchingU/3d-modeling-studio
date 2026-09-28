@@ -16,6 +16,120 @@ const path = require('path');
 
 const LOCK_TTL_MS = 10 * 60 * 1000;
 
+// ---------- ForgeLoop v3.1 animation@2 ----------
+// critical 标签（VLM 文本命中任一即硬失败，防平均分掩盖局部严重失败）
+const CRITICAL_LABELS = ['比例失调', '骨架断裂', '严重穿模', '跑出画面', '僵硬失真', '结构崩塌', '几何形变', '动作僵硬'];
+const EVIDENCE_MODES = ['raw_generic_glb', 'runtime_rotation_only'];
+
+// 解析 GPU VLM 输出：取 0~1 评分 + 命中标签
+function parseGpuVlmText(text) {
+    const s = String(text || '').trim();
+    const m = s.match(/(?:评分|score|质量)[：:]\s*(0?\.\d+|1(?:\.0)?)/i);
+    const score = m ? Math.max(0, Math.min(1, parseFloat(m[1]))) : null;
+    const labels = CRITICAL_LABELS.filter(l => s.includes(l));
+    return { score, labels, critical: labels, text: s.slice(0, 400) };
+}
+
+// 构建带标记的 VLM 证据样本（每份证据必须标记 mode/viewport/camera/animation_time/artifact_sha）
+//  - 优先 attempt.evidence.samples / external.samples（显式标记）
+//  - 旧证据仅给 gpu_images 时按 scope 推导并记录 tagged_by: 'scope'
+function buildVlmSamples(attempt, external = {}) {
+    const ev = attempt.evidence || {};
+    const scope = ev.scope || external.scope || 'runtime_rotation_only_gameplay';
+    const defaultMode = String(scope).includes('raw') ? 'raw_generic_glb' : 'runtime_rotation_only';
+    const artifactSha = attempt.artifacts?.glb_sha || attempt.artifacts?.artifact_sha || null;
+    const rawSamples = Array.isArray(ev.samples) && ev.samples.length
+        ? ev.samples.map(s => ({ ...s }))
+        : (Array.isArray(external.samples) && external.samples.length ? external.samples.map(s => ({ ...s })) : []);
+    // 旧证据兼容：gpu_images → 每张一个样本；precomputed gpu_review（含文本）→ 一个 runtime 样本（文本含 critical 标签时仍触发硬失败）
+    if (!rawSamples.length && Array.isArray(external.gpu_images) && external.gpu_images.length) {
+        for (const img of external.gpu_images) rawSamples.push({ image: img });
+    }
+    if (!rawSamples.length && external.gpu_review && typeof external.gpu_review.score === 'number') {
+        rawSamples.push({
+            image: null,
+            name: 'precomputed_gpu_review',
+            vlm_score: external.gpu_review.score,
+            vlm_text: external.gpu_review.text || ''
+        });
+    }
+    const samples = rawSamples.map(s => {
+        const mode = s.mode || (s.scope && String(s.scope).includes('raw') ? 'raw_generic_glb' : defaultMode);
+        const name = String(s.image || s.name || '');
+        const isMobile = name.includes('mobile') || s.viewport === 'mobile';
+        return {
+            image: s.image || null,
+            mode: EVIDENCE_MODES.includes(mode) ? mode : defaultMode,
+            viewport: s.viewport || ev.viewport || (mode === 'raw_generic_glb' ? 'blender-viewer' : (isMobile ? 'mobile' : 'desktop')),
+            camera: s.camera || ev.camera || (mode === 'raw_generic_glb' ? 'blender-camera-45' : 'game-camera'),
+            animation_time: s.animation_time ?? ev.animation_time ?? null,
+            artifact_sha: s.artifact_sha || artifactSha || null,
+            scope: s.scope || scope,
+            name: s.name || null,
+            vlm_score: s.vlm_score ?? null,
+            vlm_text: s.vlm_text ?? null,
+            vlm_labels: s.vlm_labels || [],
+            tagged_by: s.mode ? 'explicit' : 'scope'
+        };
+    });
+    return { samples, defaultMode };
+}
+
+// 确定性评分：硬门禁均值 0~1（与 v1 一致的缺项中性处理）
+function deterministicScore(gates) {
+    const parts = [];
+    for (const [, value] of Object.entries(gates || {})) {
+        if (value === true || value === 'pass' || value === 'passed') parts.push(1);
+        else if (value === false || value === 'fail' || value === 'failed') parts.push(0);
+        else if (typeof value === 'number') parts.push(Math.max(0, Math.min(1, value)));
+    }
+    if (!parts.length) return null;
+    return parts.reduce((s, v) => s + v, 0) / parts.length;
+}
+
+function regressionScore(regression = {}) {
+    const parts = [];
+    for (const [, value] of Object.entries(regression || {})) {
+        if (value === true || value === 'pass' || value === 'passed') parts.push(1);
+        else if (value === false || value === 'fail' || value === 'failed') parts.push(0);
+        else if (typeof value === 'number') parts.push(Math.max(0, Math.min(1, value)));
+    }
+    if (!parts.length) return 1.0; // 无回归门禁输入按通过（显式记录在向量里）
+    return parts.reduce((s, v) => s + v, 0) / parts.length;
+}
+
+// 可追溯评分向量（animation@2）：overall = min(...) 保守聚合，防止平均稀释
+// vlm_mean = min(各模式样本均值)、vlm_min = min(各模式样本最低分)——原始 GLB 与 rotation-only 不混合平均
+function computeScoreVector(policy, evaluation) {
+    const vlm = evaluation.vlm || {};
+    const perMode = vlm.per_mode || {};
+    const modeNames = Object.keys(perMode);
+    let vlmMean = null;
+    let vlmMin = null;
+    if (modeNames.length) {
+        const means = modeNames.map(m => perMode[m].mean).filter(v => v !== null && v !== undefined);
+        const mins = modeNames.map(m => perMode[m].min).filter(v => v !== null && v !== undefined);
+        vlmMean = means.length ? Math.min(...means) : null;
+        vlmMin = mins.length ? Math.min(...mins) : null;
+    } else if (vlm.mean !== undefined || vlm.min !== undefined) {
+        vlmMean = vlm.mean ?? null;
+        vlmMin = vlm.min ?? null;
+    }
+    const det = deterministicScore(evaluation.hard_gates);
+    const reg = regressionScore(evaluation.regression);
+    const present = [det, vlmMean, vlmMin, reg].filter(v => v !== null && v !== undefined);
+    const overall = present.length ? Math.min(...present) : null;
+    return {
+        deterministic_score: det,
+        vlm_mean: vlmMean,
+        vlm_min: vlmMin,
+        regression_score: reg,
+        overall_score: overall,
+        formula: policy?.scoring?.formula || 'min(deterministic_score, vlm_mean, vlm_min, regression_score)',
+        per_mode: perMode
+    };
+}
+
 // ---------- 确定性硬门禁（工厂侧本地检查，通用） ----------
 // 对 Attempt 快照做来源/格式/预算/产物 SHA 校验；返回 { hard_gates, defects }
 function runLocalGates(attempt) {
@@ -54,7 +168,11 @@ function runLocalGates(attempt) {
             gates.clipping = false; defects.push({ gate: 'clipping', severity: 'hard', desc: `穿模 ${ev.clipping_count} 处` });
         }
         if (typeof ev.root_drift === 'number' && ev.root_drift > 0.2) {
-            gates.root_drift = false; defects.push({ gate: 'root_drift', severity: 'hard', desc: `根漂移 ${ev.root_drift}` });
+            gates.root_drift = false; defects.push({ gate: 'root_drift', severity: 'hard', mode: 'runtime_rotation_only', desc: `根漂移 ${ev.root_drift}` });
+        }
+        // ForgeLoop v3.1：原始 GLB 骨盆/根位移比（raw_generic_glb 模式，rest/bind 空间）——不得被 runtime 证据掩盖
+        if (typeof ev.root_translation_ratio === 'number' && ev.root_translation_ratio > 0.5) {
+            gates.root_translation_ratio = false; defects.push({ gate: 'root_translation_ratio', severity: 'hard', mode: 'raw_generic_glb', desc: `原始 GLB 骨盆位移比 ${ev.root_translation_ratio} 超阈值` });
         }
         if (typeof ev.loop_seam === 'number' && ev.loop_seam > 0.05) {
             gates.loop_seam = false; defects.push({ gate: 'loop_seam', severity: 'hard', desc: `循环接缝 ${ev.loop_seam}` });
@@ -118,43 +236,131 @@ except Exception as e:
     }
 }
 
-// ---------- 自动评估 ----------
+// ---------- 自动评估（ForgeLoop v3.1 animation@2） ----------
 // evaluate：调用方注入的评估实现（试点驱动可传游戏侧硬门禁结果）；默认跑本地门禁。
-// 返回 { gates, gpu_review, metrics, defects, score, passed }
+// 返回 { gates, gpu_review, vlm, metrics, defects, score_vector, score, passed }
 async function evaluateAttempt(attempt, { external = null, gpuImages = null } = {}) {
     const policy = POLICY_V1[attempt.domain] || POLICY_V1.model;
     const local = runLocalGates(attempt);
-    const gates = { ...local.gates, ...(external?.hard_gates || {}) };
     const defects = [...local.defects, ...(external?.defects || [])];
-    // 合并去重（同一 gate 以失败为准）
+    // 合并去重（同一 gate 失败优先：本地证据门禁与外部游戏侧门禁任一失败即失败，外部不得覆盖本地失败）
     const mergedGates = {};
-    for (const [k, v] of Object.entries(gates)) mergedGates[k] = mergedGates[k] === false ? false : v;
-    let gpuReview = external?.gpu_review || null;
-    if (!gpuReview && gpuImages && gpuImages.length) {
-        const reviews = [];
-        for (const img of gpuImages.slice(0, 3)) {
-            const r = await gpuReviewImage(img, external?.gpuPrompt || '请对这张游戏画面做自动质量审查（0~1 分）：检查角色动作可信度、手绳接触、骨盆姿态、穿模、比例。只输出"评分：0.x"和一句话结论。');
-            if (r) reviews.push(r);
-        }
-        if (reviews.length) {
-            gpuReview = { score: reviews.reduce((s, r) => s + r.score, 0) / reviews.length, text: reviews.map(r => r.text).join(' | '), model: reviews[0].model };
+    {
+        const allIds = new Set([...Object.keys(local.gates), ...Object.keys(external?.hard_gates || {})]);
+        for (const k of allIds) {
+            const lv = local.gates[k];
+            const ev = external?.hard_gates?.[k];
+            const lFail = lv === false || lv === 'fail' || lv === 'failed';
+            const eFail = ev === false || ev === 'fail' || ev === 'failed';
+            if (lFail || eFail) mergedGates[k] = false;
+            else if (ev !== undefined) mergedGates[k] = ev;
+            else if (lv !== undefined) mergedGates[k] = lv;
         }
     }
-    const evaluation = { hard_gates: mergedGates, gpu_review: gpuReview, metrics: external?.metrics || {}, defects };
-    const score = domainQualityScore(attempt.domain, evaluation);
-    const gateFails = defects.length > 0 || Object.values(mergedGates).some(v => v === false || v === 'fail' || v === 'failed');
-    // comparison：子 Attempt 必须不劣于父（champion/challenger）
-    let betterThanParent = true;
+
+    // ---- ForgeLoop v3.1：VLM 证据样本（带标记、按模式隔离） ----
+    const ext = { ...(external || {}) };
+    if (!ext.gpu_images && gpuImages && gpuImages.length) ext.gpu_images = gpuImages;
+    const { samples, defaultMode } = buildVlmSamples(attempt, ext);
+    const gpuPrompt = external?.gpuPrompt || '请对这张画面做自动质量审查（0~1 分）：检查角色动作可信度、手绳接触、骨盆姿态、穿模、比例、骨架结构、是否僵硬失真。只输出"评分：0.x"和一句话结论。';
+    const sampleReviews = [];
+    for (const s of samples) {
+        let review = null;
+        if (s.vlm_score !== undefined && s.vlm_score !== null) {
+            const parsed2 = parseGpuVlmText(s.vlm_text || '');
+            review = { score: Math.max(0, Math.min(1, s.vlm_score)), text: s.vlm_text || '', labels: (s.vlm_labels && s.vlm_labels.length ? s.vlm_labels : parsed2.labels), critical: (s.vlm_labels && s.vlm_labels.length ? s.vlm_labels : parsed2.critical), source: 'evidence' };
+        } else if (s.image && fs.existsSync(s.image)) {
+            const r = await gpuReviewImage(s.image, gpuPrompt);
+            if (r) {
+                const parsed = parseGpuVlmText(r.text);
+                review = { score: r.score, text: r.text, labels: parsed.labels, critical: parsed.critical, source: 'live' };
+            }
+        } else if (s.vlm_score === undefined && s.image && !fs.existsSync(s.image)) {
+            review = { score: null, text: `样本图片不存在: ${s.image}`, labels: [], critical: [], source: 'missing_image' };
+        }
+        if (review) {
+            sampleReviews.push({
+                ...s,
+                score: review.score,
+                text: review.text,
+                labels: review.labels,
+                critical: review.critical,
+                review_source: review.source,
+                review_error: review.source === 'missing_image' ? review.text : null
+            });
+        }
+    }
+    const perMode = {};
+    for (const m of EVIDENCE_MODES) {
+        const items = sampleReviews.filter(s => s.mode === m);
+        const scores = items.map(i => i.score).filter(v => typeof v === 'number');
+        perMode[m] = {
+            count: items.length,
+            mean: scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null,
+            min: scores.length ? Math.min(...scores) : null,
+            samples: items.map(i => ({ image: i.image, score: i.score, labels: i.labels, critical: i.critical, viewport: i.viewport, camera: i.camera, animation_time: i.animation_time, artifact_sha: i.artifact_sha, review_source: i.review_source, text: i.text }))
+        };
+    }
+    const vlm = { samples: sampleReviews, per_mode: perMode, mode: defaultMode };
+
+    // ---- ForgeLoop v3.1：结构化缺陷自动生成（防平均稀释/证据缺失） ----
+    const policyTh = policy.thresholds || {};
+    const vlmMeanMin = policyTh.vlm_mean_min?.value ?? 0.55;
+    const vlmMinMin = policyTh.vlm_min_min?.value ?? 0.4;
+    for (const m of EVIDENCE_MODES) {
+        const pm = perMode[m];
+        if (pm.count === 0) {
+            // 声明了 evidence_modes 但该模式无样本：不强制失败（raw 模式可能只有报告），但记录审计信息
+            vlm.per_mode[m].note = 'no_image_samples';
+            continue;
+        }
+        if (pm.mean !== null && pm.mean < vlmMeanMin) {
+            defects.push({ gate: 'vlm_mean', severity: 'critical', mode: m, desc: `${m} VLM 均值 ${pm.mean.toFixed(3)} 低于阈值 ${vlmMeanMin}（平均分不得掩盖局部失败）` });
+        }
+        if (pm.min !== null && pm.min < vlmMinMin) {
+            defects.push({ gate: 'vlm_min', severity: 'critical', mode: m, desc: `${m} VLM 最低分 ${pm.min.toFixed(3)} 低于阈值 ${vlmMinMin}（单样本低分不得被平均稀释）` });
+        }
+        for (const s of pm.samples) {
+            if (s.critical && s.critical.length) {
+                defects.push({ gate: 'critical_label', severity: 'critical', mode: m, desc: `样本命中 critical 标签: ${s.critical.join('/')}`, image: s.image, score: s.score });
+            }
+            if (!s.artifact_sha) {
+                defects.push({ gate: 'evidence_tagged', severity: 'hard', mode: m, desc: '证据缺少 artifact_sha 标记', image: s.image });
+            }
+        }
+    }
+
+    const evaluation = { hard_gates: mergedGates, gpu_review: null, vlm, metrics: external?.metrics || {}, regression: external?.regression || {}, defects };
+    // 兼容旧字段：gpu_review 取最差模式均值（不再用于稀释）
+    const modeMeans = Object.values(perMode).map(p => p.mean).filter(v => v !== null && v !== undefined);
+    if (modeMeans.length) evaluation.gpu_review = { score: Math.min(...modeMeans), text: sampleReviews.map(s => s.text).join(' | ').slice(0, 400), model: 'qwen3.5-9b-fp8(auto)' };
+
+    // ---- ForgeLoop v3.1：可追溯评分向量 ----
+    const vector = computeScoreVector(policy, evaluation);
+    evaluation.score_vector = vector;
+    const score = vector.overall_score;
+
+    // 对比：parent=null 的基线只能标 baseline，不得 better_than_parent=true；有父但无记录分值时视为可比较通过
+    let betterThanParent = attempt.based_on_attempt_id ? true : false;
     if (attempt.based_on_attempt_id) {
         const parent = learningDb.findAttemptById(attempt.based_on_attempt_id);
         if (parent) {
-            const parentScore = domainQualityScore(attempt.domain, parent.auto_evaluation || {});
-            if (parentScore !== null && score !== null && score < parentScore) betterThanParent = false;
+            const parentVector = parent.auto_evaluation?.score_vector || {};
+            const parentScore = parentVector.overall_score ?? (parent.auto_evaluation?.score ?? null);
+            if (parentScore !== null && score !== null) betterThanParent = score >= parentScore;
         }
     }
-    evaluation.comparison = { better_than_parent: betterThanParent };
+    evaluation.comparison = {
+        better_than_parent: betterThanParent,
+        baseline: !attempt.based_on_attempt_id,
+        parent_attempt_id: attempt.based_on_attempt_id || null
+    };
     evaluation.score = score;
-    evaluation.passed = !gateFails && score !== null && score >= (policy.quality_metrics[0]?.min ?? 0.6) && betterThanParent;
+    const criticalCount = defects.filter(d => d.severity === 'critical').length;
+    const gateFails = defects.length > 0 || Object.values(mergedGates).some(v => v === false || v === 'fail' || v === 'failed');
+    const vlmOk = vector.vlm_mean !== null ? vector.vlm_mean >= vlmMeanMin : true;
+    const vlmMinOk = vector.vlm_min !== null ? vector.vlm_min >= vlmMinMin : true;
+    evaluation.passed = !gateFails && score !== null && vlmOk && vlmMinOk && criticalCount === 0 && (attempt.based_on_attempt_id ? betterThanParent : true);
     return evaluation;
 }
 
@@ -179,11 +385,13 @@ function pickRepairVariable(attempt, evaluation) {
         return null; // 其余（穿模/审美等）歧义 → 待处理
     }
     if (domain === 'animation') {
+        // ForgeLoop v3.1：根/骨盆位移污染（raw GLB root_translation_ratio / runtime root_drift）→ 归一化修复
+        if (failedGates.includes('root_translation_ratio') || failedGates.includes('root_drift')
+            || /漂移|drift|位移|root/.test(String(attempt.failure_detail || '') + JSON.stringify(defects.map(d => d.desc || '')))) {
+            return { param: 'animation.root_translation_normalization', to: 'normalize_root_translation' };
+        }
         if (failedGates.includes('clipping') || /穿模|clipping/.test(String(attempt.failure_detail || ''))) {
             return { param: 'animation.weight_repair_plan', to: 'sanitize_skin_weights' };
-        }
-        if (failedGates.includes('root_drift') || /漂移|drift/.test(String(attempt.failure_detail || ''))) {
-            return { param: 'animation.weight_repair_plan', to: 'stabilize_locomotion' };
         }
         if (failedGates.includes('bone_mapping') || /骨骼|映射|bone/.test(String(attempt.failure_detail || ''))) {
             return { param: 'animation.retarget_plan', to: 'retarget_actions' };
@@ -276,15 +484,16 @@ async function runAutoIteration(attemptId, { ownerId = null, evaluate = null, re
         if (flow === 'generated') {
             attempt = learningDb.setAutoFlowState(attemptId, 'auto_evaluating', { detail: '无人循环进入自动评估' });
         }
-        // 阶段二：auto_evaluating → 自动评估（幂等：已有 external/auto_evaluation 直接复用）
+        // 阶段二：auto_evaluating → 自动评估（幂等：已有 external/auto_evaluation 直接复用，除非 reopen 标记强制重评）
         if (attempt.auto_flow_state === 'auto_evaluating') {
-            const evaluation = attempt.auto_evaluation && attempt.auto_evaluation.score !== undefined
+            const canReuse = attempt.auto_evaluation && attempt.auto_evaluation.score !== undefined && !attempt.auto_evaluation.reopen;
+            const evaluation = canReuse
                 ? attempt.auto_evaluation
                 : await evaluateAttempt(attempt, { external: evaluate ? await evaluate(attempt) : null, gpuImages: attempt.evidence?.gpu_images || null });
             learningDb.saveAutoEvaluation(attemptId, evaluation);
             attempt = learningDb.findAttemptById(attemptId);
             if (evaluation.passed) {
-                attempt = learningDb.setAutoFlowState(attemptId, 'auto_accepted', { detail: '自动评估通过（硬门禁+质量分+对比）', evidence: { score: evaluation.score } });
+                attempt = learningDb.setAutoFlowState(attemptId, 'auto_accepted', { detail: '自动评估通过（硬门禁+质量分+对比）', evidence: { score: evaluation.score, score_vector: evaluation.score_vector } });
                 return { ok: true, attempt, state: 'auto_accepted', evaluation };
             }
             attempt = learningDb.setAutoFlowState(attemptId, 'auto_rejected', { detail: '自动评估未通过', evidence: { defects: evaluation.defects } });
@@ -304,6 +513,16 @@ async function runAutoIteration(attemptId, { ownerId = null, evaluate = null, re
             attempt = learningDb.setAutoFlowState(attemptId, 'quarantined', { detail: '缺陷无法唯一映射到白名单修复变量（歧义/审美/未知/基础设施）', evidence: { defects: attempt.auto_evaluation?.defects || [] } });
             return { ok: false, state: 'quarantined', attempt, reason: 'no_unambiguous_repair' };
         }
+        // ForgeLoop v3.1：同一变量连续无改善 → quarantined（防止同变量无限重试，保留 champion）
+        if (attempt.changed_variable?.param === variable.param && attempt.based_on_attempt_id) {
+            const parentEval = learningDb.findAttemptById(attempt.based_on_attempt_id)?.auto_evaluation || {};
+            const curScore = attempt.auto_evaluation?.score_vector?.overall_score ?? attempt.auto_evaluation?.score ?? null;
+            const parentScore = parentEval.score_vector?.overall_score ?? parentEval.score ?? null;
+            if (curScore !== null && parentScore !== null && curScore <= parentScore) {
+                attempt = learningDb.setAutoFlowState(attemptId, 'quarantined', { detail: `变量 ${variable.param} 与父 Attempt 相同且无改善（${curScore} ≤ ${parentScore}），停止同变量重试`, evidence: { variable, cur_score: curScore, parent_score: parentScore } });
+                return { ok: false, state: 'quarantined', attempt, reason: 'same_variable_no_improvement' };
+            }
+        }
         if (!repair) return { ok: false, state: 'quarantined', attempt, reason: 'repair_executor_missing' };
 
         // 创建子 Attempt（独立 Job）→ 执行真实修复
@@ -321,7 +540,11 @@ async function runAutoIteration(attemptId, { ownerId = null, evaluate = null, re
                 failure_detail: repairResult.error?.message || null
             });
             // 子 Attempt 进入评估（修复产物必须重跑同一自动门禁）
-            learningDb.setAutoFlowState(child.id, 'auto_evaluating', { detail: '修复产物进入自动评估', evidence: { variable } });
+            // ForgeLoop v3.1：GPU 产物已生成但游戏侧 staging 证据未就绪 → 停在 auto_evaluating，等下一轮带全量外部证据评估（重启可续跑）
+            learningDb.setAutoFlowState(child.id, 'auto_evaluating', { detail: repairResult.pending_external ? '修复产物已生成，等待游戏侧 staging 证据后评估' : '修复产物进入自动评估', evidence: { variable, pending_external: !!repairResult.pending_external } });
+            if (repairResult.pending_external) {
+                return { ok: true, state: 'auto_evaluating', pending_external: true, attempt: learningDb.findAttemptById(child.id), job, reused };
+            }
             const childNow = learningDb.findAttemptById(child.id);
             const childEval = await evaluateAttempt(childNow, { external: evaluate ? await evaluate(childNow) : null, gpuImages: childNow.evidence?.gpu_images || null });
             learningDb.saveAutoEvaluation(child.id, childEval);
@@ -385,4 +608,4 @@ async function autoIntegrate(attemptId, { project, asset_id, domain, stagingDir,
     return { ok: true, champion, staging_report: stagingOk, release_zip: zip, previous: prev };
 }
 
-module.exports = { runAutoIteration, recoverFromDb, autoIntegrate, evaluateAttempt, pickRepairVariable, createAutoRepairChild, gpuReviewImage, runLocalGates };
+module.exports = { runAutoIteration, recoverFromDb, autoIntegrate, evaluateAttempt, pickRepairVariable, createAutoRepairChild, gpuReviewImage, runLocalGates, buildVlmSamples, computeScoreVector, deterministicScore, regressionScore, parseGpuVlmText, CRITICAL_LABELS, EVIDENCE_MODES };

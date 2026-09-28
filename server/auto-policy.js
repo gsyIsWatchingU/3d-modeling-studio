@@ -39,33 +39,51 @@ const POLICY_V1 = {
             max_candidates_per_round: { value: 3, unit: 'count' }
         }
     },
+    // ForgeLoop v3.1 —— animation@2：平均分不得掩盖局部严重失败。
+    //  - vlm_mean 必须达标、vlm_min 必须达标（单样本低分不能被平均稀释）
+    //  - 任一 required 样本命中 critical 标签（比例失调/骨架断裂/严重穿模/跑出画面/僵硬失真等）直接失败
+    //  - 原始 GLB（raw_generic_glb）与 rotation-only 运行时（runtime_rotation_only）证据分别评分，不混合平均
+    //  - 最终评分为可追溯向量：deterministic_score / vlm_mean / vlm_min / regression_score / overall_score
+    //  - 所有阈值、标签与公式版本化并进入 change_log / v3_policies 审计记录
     animation: {
-        version: 1,
+        version: 2,
         hard_gates: [
             { id: 'bone_mapping', desc: '骨骼映射完整、无缺失骨骼', unit: 'report' },
             { id: 'not_static', desc: '动作非静态（位移/旋转方差 > 0）', unit: 'boolean' },
             { id: 'joint_angle', desc: '关节角异常比例低于阈值', unit: 'ratio' },
             { id: 'clipping', desc: '穿模检查无严重穿插', unit: 'report' },
-            { id: 'root_drift', desc: '根节点漂移低于阈值', unit: 'distance' },
+            { id: 'root_drift', desc: '运行时根节点漂移低于阈值（runtime_rotation_only）', unit: 'distance' },
+            { id: 'root_translation_ratio', desc: '原始 GLB 骨盆/根位移比低于阈值（raw_generic_glb，rest/bind 空间归一）', unit: 'ratio' },
             { id: 'loop_seam', desc: '循环接缝（起止帧差异）低于阈值', unit: 'distance' },
             { id: 'contact', desc: '接触点可信（手绳/脚底）', unit: 'gpu_review' },
             { id: 'gameplay_readable', desc: '游戏实际镜头可读性', unit: 'gpu_review' }
         ],
         quality_metrics: [
-            { id: 'quality_score', desc: '确定性门禁质量分 0~1', unit: 'score', min: 0.6 },
-            { id: 'gpu_review', desc: '自有 GPU 多模态视觉审查评分 0~1', unit: 'score', min: 0.5 }
+            { id: 'vlm_mean', desc: '多视角 GPU 审查平均分 0~1（每模式独立取均值，取最差模式）', unit: 'score', min: 0.55 },
+            { id: 'vlm_min', desc: '多视角 GPU 审查最低分 0~1（单样本低分不得被平均稀释）', unit: 'score', min: 0.4 },
+            { id: 'critical_labels_zero', desc: '任一样本命中 critical 标签（比例失调/骨架断裂/严重穿模/跑出画面/僵硬失真等）即硬失败', unit: 'count', min: 0 }
         ],
         regression: [
-            { id: 'playthrough', desc: '四关流程不回归', unit: 'boolean' },
+            { id: 'playthrough', desc: '四关流程不回归（暂停/恢复/循环/四关）', unit: 'boolean' },
             { id: 'audio_trace', desc: '音频事件不回归', unit: 'boolean' }
         ],
         comparison: [
-            { id: 'better_than_parent', desc: '子 Attempt 质量分 ≥ 父 Attempt', unit: 'boolean' }
+            { id: 'better_than_parent', desc: '子 Attempt 质量分 ≥ 父 Attempt（parent=null 仅标 baseline，恒为 false）', unit: 'boolean' }
         ],
+        evidence_modes: ['raw_generic_glb', 'runtime_rotation_only'],
+        critical_labels: ['比例失调', '骨架断裂', '严重穿模', '跑出画面', '僵硬失真', '结构崩塌', '几何形变', '动作僵硬'],
+        scoring: {
+            formula: 'overall_score = min(deterministic_score, vlm_mean, vlm_min, regression_score)；vlm_mean = min(各模式样本均值)，vlm_min = min(各模式样本最低分)；passed 需 vlm_mean ≥ 0.55 且 vlm_min ≥ 0.4 且 critical 标签计数 = 0；deterministic_score = 硬门禁均值',
+            version: 'animation@2'
+        },
         thresholds: {
             joint_angle_anomaly_ratio_max: { value: 0.1, unit: 'ratio' },
             root_drift_max: { value: 0.2, unit: 'm' },
+            root_translation_ratio_max: { value: 0.5, unit: 'ratio' },
             loop_seam_max: { value: 0.05, unit: 'distance' },
+            vlm_mean_min: { value: 0.55, unit: 'score' },
+            vlm_min_min: { value: 0.4, unit: 'score' },
+            critical_labels_max: { value: 0, unit: 'count' },
             quality_score_min: { value: 0.6, unit: 'score' },
             gpu_review_min: { value: 0.5, unit: 'score' },
             max_repairs: { value: 3, unit: 'count' },
@@ -184,7 +202,8 @@ const POLICY_V1 = {
 };
 
 const CHANGE_LOG = [
-    { version: 1, at: '2026-09-28T12:00:00+08:00', reason: 'ForgeLoop v3 初始策略：六领域硬门禁+确定性指标+自有 GPU 多模态审查钩子；阈值含单位与版本', operator: 'Doubao MainAgent' }
+    { version: 1, at: '2026-09-28T12:00:00+08:00', reason: 'ForgeLoop v3 初始策略：六领域硬门禁+确定性指标+自有 GPU 多模态审查钩子；阈值含单位与版本', operator: 'Doubao MainAgent' },
+    { version: 2, at: '2026-09-28T16:00:00+08:00', reason: 'ForgeLoop v3.1 animation@2：新增 vlm_mean/vlm_min 双达标（单样本低分不得被平均稀释，桌面 0.2 必须失败）、critical 标签硬失败、raw_generic_glb 与 runtime_rotation_only 证据隔离分评、root_translation_ratio 门禁、可追溯评分向量 min(deterministic_score, vlm_mean, vlm_min, regression_score)、parent=null 仅 baseline 不得 better_than_parent', operator: 'Doubao MainAgent (ForgeLoop v3.1)' }
 ];
 
 // 服务启动幂等：把六领域 v1 策略写入 db（已存在相同 domain+version 则跳过）

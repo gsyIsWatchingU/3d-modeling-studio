@@ -232,6 +232,7 @@ function executorForDomain(domain, param) {
     if (domain === 'audio') return 'gpu-audio-postprocess';
     if (param && param.startsWith('animation.weight_repair_plan')) return 'forge3d-blender-weight';
     if (param && param.startsWith('animation.retarget_plan')) return 'forge3d-blender-retarget';
+    if (param && param.startsWith('animation.root_translation_normalization')) return 'forge3d-blender-root-normalize';
     return 'forge3d-model'; // model 领域走原 Forge3D 建模流水线
 }
 

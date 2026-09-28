@@ -61,7 +61,9 @@ const REPAIR_VARIABLES = {
     // 已登记的权重修复/重定向方案（与 GPU 工位 deploy/forge3d/blender/ 下的修复脚本一一对应）
     animation: {
         'animation.weight_repair_plan': v => REGISTERED_WEIGHT_REPAIR_PLANS.includes(v),
-        'animation.retarget_plan': v => REGISTERED_RETARGET_PLANS.includes(v)
+        'animation.retarget_plan': v => REGISTERED_RETARGET_PLANS.includes(v),
+        // ForgeLoop v3.1：根/骨盆位移归一化（修复源 FBX 单位污染导致的 root drift；工位脚本 normalize_root_translation.py）
+        'animation.root_translation_normalization': v => REGISTERED_ROOT_NORMALIZE_PLANS.includes(v)
     },
     audio: {
         'audio.gain_adjust': v => typeof v === 'number' && v >= 0.05 && v <= 2.0,
@@ -78,6 +80,10 @@ const REGISTERED_WEIGHT_REPAIR_PLANS = [
 const REGISTERED_RETARGET_PLANS = [
     'retarget_actions'              // deploy/forge3d/blender/retarget.py（动作重定向）
 ];
+// ForgeLoop v3.1：根/骨盆位移归一化方案（deploy/forge3d/blender/normalize_root_translation.py）
+const REGISTERED_ROOT_NORMALIZE_PLANS = [
+    'normalize_root_translation'    // deploy/forge3d/blender/normalize_root_translation.py（rest/bind 空间归一）
+];
 
 // v1 兼容导出：旧客户端/旧测试引用 SINGLE_VARIABLES / SINGLE_VARIABLE_RULES 时仍指 model 领域
 const SINGLE_VARIABLE_RULES = REPAIR_VARIABLES.model;
@@ -92,6 +98,7 @@ const VARIABLE_LABELS = {
     'generation.specular_level': '高光强度',
     'animation.weight_repair_plan': '权重修复方案',
     'animation.retarget_plan': '重定向方案',
+    'animation.root_translation_normalization': '根/骨盆位移归一化方案',
     'audio.gain_adjust': '音频增益',
     'audio.trim_start_s': '截取起点（秒）'
 };
@@ -447,6 +454,7 @@ module.exports = {
     DOMAIN_REPAIR_VARIABLES,
     REGISTERED_WEIGHT_REPAIR_PLANS,
     REGISTERED_RETARGET_PLANS,
+    REGISTERED_ROOT_NORMALIZE_PLANS,
     LIFECYCLE_ORDER,
     LIFECYCLE_LABELS,
     PROMOTION_GATES,

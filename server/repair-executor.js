@@ -62,6 +62,39 @@ function buildClippingGateCommand({ glbPath, action, sceneGlb }) {
     return { host: 'gsy013', command: cmd, script, kind: 'clipping_gate' };
 }
 
+// ---------- 动画：构建根/骨盆位移归一化命令（ForgeLoop v3.1） ----------
+// normalize_root_translation.py 参数：--input 目标 GLB --action 动作 --output 输出 GLB --report JSON
+function buildRootNormalizeCommand({ targetGlb, action, outGlb, reportOut }) {
+    if (!targetGlb || !outGlb) throw new Error('根位移归一化参数不完整：需要 targetGlb/outGlb');
+    const script = path.posix.join(FORGE3D_ROOT, 'blender', 'normalize_root_translation.py');
+    if (!reportOut) reportOut = `/tmp/root-norm-report-${path.basename(outGlb)}.json`;
+    const cmd = [
+        `cd ${FORGE3D_ROOT}`,
+        `${BLENDER_PATH} --background --python ${script} -- --input ${targetGlb} --action ${action || 'hang'} --output ${outGlb} --report ${reportOut}`
+    ].join(' && ');
+    return { host: 'gsy013', command: cmd, script, kind: 'animation.root_translation_normalization', action: action || 'hang', outGlb, reportOut };
+}
+
+// 解析 normalize_root_translation.py 的 JSON 报告（stdout 或 --report 文件）
+function parseRootNormalizeReport(stdout, stderr, reportPath) {
+    let raw = stdout || stderr || '';
+    if (reportPath && fs.existsSync(reportPath)) raw = fs.readFileSync(reportPath, 'utf8');
+    const m = raw.match(/\{[\s\S]*\}/);
+    if (!m) throw new Error(`无法解析根位移归一化报告：${raw.slice(0, 500)}`);
+    const report = JSON.parse(m[0]);
+    return {
+        repair_kind: report.repair_kind || 'animation.root_translation_normalization',
+        action: report.action || null,
+        before: report.before || {},
+        after: report.after || {},
+        clamped: Boolean(report.clamped),
+        loop_seam_enforced: Boolean(report.loop_seam_enforced),
+        pelvis_bone: report.pelvis_bone || null,
+        rig_height: report.rig_height ?? null,
+        raw: raw.slice(0, 2000)
+    };
+}
+
 // ---------- 音频：构建工厂 postprocess 命令（gain / trim_start_s） ----------
 function buildAudioRepairCommand({ eventJobDir, eventId, projectId, gain, trimStartS, outRoot }) {
     if (!eventJobDir || !eventId || !projectId) throw new Error('音频修复参数不完整：需要 eventJobDir/eventId/projectId');
@@ -112,6 +145,8 @@ module.exports = {
     sshTransport,
     buildRetargetCommand,
     buildClippingGateCommand,
+    buildRootNormalizeCommand,
+    parseRootNormalizeReport,
     buildAudioRepairCommand,
     parseClippingReport,
     runRemote,
