@@ -38,6 +38,10 @@ const upload = multer({
     limits: { files: 30, fileSize: artifacts.MAX_ARTIFACT_BYTES, fields: 20 }
 });
 
+// Worker 产物上传：字段名为 "key:filename"（如 mesh:shape.glb），用 any() 接收全部文件部件，
+// 由处理器从 fieldname 解析 key；同时兼容旧字段名 "artifacts"。
+const uploadArtifacts = upload.any();
+
 // 父任务详情：父 + 全部子任务（含产物、失败原因、重试状态）
 function publicParent(parent, tasks) {
     const byStage = new Map();
@@ -216,7 +220,7 @@ function createMpRouter({ uploadDir }) {
         res.json({ success: true, data: { status: task.status, cancel: task.status === TASK_STATUS.CANCELLED } });
     });
 
-    router.post('/worker/tasks/:id/complete', requireWorker, upload.array('artifacts', 30), (req, res) => {
+    router.post('/worker/tasks/:id/complete', requireWorker, uploadArtifacts, (req, res) => {
         const task = store.findTask(req.params.id);
         if (!task) return res.status(404).json({ success: false, error: '任务不存在' });
         const workerId = String(req.body?.worker || '');

@@ -417,6 +417,30 @@ def execute_stage(args, task: dict, workdir: Path, monitor: VramMonitor, log_lin
     return {"outputs": outputs, "preview": preview, "qc_report": qc_report, "metrics": metrics}
 
 
+# ---------------- 心跳 ----------------
+
+def start_heartbeat(args, task_id: str, token: str):
+    """运行期心跳：每 HEARTBEAT_EVERY 秒上报一次，防止长阶段租约过期被重新领取。"""
+    import threading
+    stop = {"flag": False}
+
+    def beat():
+        while not stop["flag"]:
+            time.sleep(HEARTBEAT_EVERY)
+            try:
+                resp = http_json("POST", f"{args.api_url}/api/mp/worker/tasks/{task_id}/heartbeat",
+                                 token, {"worker": args.host}, timeout=15)
+                data = resp.get("data") or {}
+                if data.get("cancel"):
+                    stop["flag"] = True
+            except Exception:
+                pass
+
+    t = threading.Thread(target=beat, daemon=True)
+    t.start()
+    return lambda: stop.__setitem__("flag", True)
+
+
 # ---------------- Worker 主循环 ----------------
 
 def main() -> int:
@@ -464,9 +488,11 @@ def main() -> int:
         log_lines = [f"task {task_id} stage={task['stage']} attempt={task.get('attempt')}"]
         monitor = VramMonitor(args.gpu_index)
         monitor.start()
+        stop_heartbeat = start_heartbeat(args, task_id, args.token)
         started = time.monotonic()
         try:
             result = execute_stage(args, task, workdir, monitor, log_lines)
+            stop_heartbeat()
             elapsed = round(time.monotonic() - started, 2)
             vram = monitor.report()
             metrics = dict(result.get("metrics") or {})
@@ -496,6 +522,7 @@ def main() -> int:
                 raise StageError(f"complete 被拒: {resp.get('error')}")
             print(f"[worker {args.capabilities}] 任务 {task_id} 完成 {elapsed}s", flush=True)
         except Exception as exc:
+            stop_heartbeat()
             monitor.stop = True
             vram = monitor.report()
             error = str(exc)
