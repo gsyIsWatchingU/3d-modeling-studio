@@ -58,29 +58,35 @@ async function remoteExec(command) {
     return runCmd(sshArgs()[0], [...sshArgs().slice(1), command], { timeoutMs: 180000 });
 }
 
+// 远端 shell 单引号转义：防止 prompt/路径含空格、中文、单引号时被 shell 拆分
+// （曾出现 prompt 含空格 → curl 把 “Worker”、中文短语当 host → Could not resolve host）
+function shq(value) {
+    return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
 // 提交 paint-only 远端任务（mesh 先 scp 到 gsy013 临时目录，再本地 curl）
 async function submitPaint({ parentId, taskId, meshPath, materialPath, params }) {
     const cfg = gsy013Cfg();
     if (!cfg.host) throw new Error('MP_GSY013_SSH_HOST 未配置');
     const remoteDir = `/tmp/mp-paint-${taskId.toLowerCase()}`;
     const meshName = path.basename(meshPath);
-    await remoteExec(`mkdir -p '${remoteDir}'`);
+    await remoteExec(`mkdir -p ${shq(remoteDir)}`);
     await runCmd(scpArgs()[0], [...scpArgs().slice(1), meshPath, `${cfg.user}@${cfg.host}:${remoteDir}/${meshName}`]);
     let materialArg = '';
     if (materialPath && fs.existsSync(materialPath)) {
         const matName = path.basename(materialPath);
         await runCmd(scpArgs()[0], [...scpArgs().slice(1), materialPath, `${cfg.user}@${cfg.host}:${remoteDir}/${matName}`]);
-        materialArg = ` -F material_source=@${remoteDir}/${matName}`;
+        materialArg = ` -F ${shq(`material_source=@${remoteDir}/${matName}`)}`;
     }
     const curl = [
-        'curl', '-sS', '-X', 'POST', `${cfg.apiUrl}/v1/stages/paint`,
-        '-F', `mesh=@${remoteDir}/${meshName}`,
-        '-F', `asset_name=mp-${parentId.toLowerCase()}-${taskId.toLowerCase()}`,
-        '-F', `asset_kind=${params.assetKind}`,
-        '-F', `profile=${params.profile}`,
-        '-F', `prompt=${String(params.prompt || '').slice(0, 1500)}`,
-        '-F', `seed=${params.seed ?? 1234}`,
-        ...(cfg.token ? [`-H`, `'X-Forge3D-Token: ${cfg.token}'`] : [])
+        'curl', '-sS', '-X', 'POST', shq(`${cfg.apiUrl}/v1/stages/paint`),
+        '-F', shq(`mesh=@${remoteDir}/${meshName}`),
+        '-F', shq(`asset_name=mp-${parentId.toLowerCase()}-${taskId.toLowerCase()}`),
+        '-F', shq(`asset_kind=${params.assetKind}`),
+        '-F', shq(`profile=${params.profile}`),
+        '-F', shq(`prompt=${String(params.prompt || '').slice(0, 1500)}`),
+        '-F', shq(`seed=${params.seed ?? 1234}`),
+        ...(cfg.token ? ['-H', shq(`X-Forge3D-Token: ${cfg.token}`)] : [])
     ].join(' ');
     const full = `${curl}${materialArg}`;
     const stdout = await remoteExec(full);
@@ -137,4 +143,4 @@ async function downloadRemoteArtifact(remotePath, targetPath, maxBytes = 300 * 1
     return { bytes: stat.size, sha256: sha };
 }
 
-module.exports = { config: gsy013Cfg, isConfigured, submitPaint, pollPaint, downloadRemoteArtifact };
+module.exports = { config: gsy013Cfg, isConfigured, submitPaint, pollPaint, downloadRemoteArtifact, shq };

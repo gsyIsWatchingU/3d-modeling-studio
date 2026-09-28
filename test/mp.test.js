@@ -405,3 +405,12 @@ test('兼容: mp 存储与旧 db.json 相互独立', () => {
     const stats = store.stats();
     assert.equal(typeof stats.totalTasks, 'number');
 });
+
+// ---------- paint：远端 shell 命令转义 ----------
+test('paint: shq 转义含空格/中文/单引号的参数', () => {
+    const { shq } = require('../server/mp/paint');
+    assert.equal(shq("abc"), "'abc'");
+    assert.equal(shq("四卡 Worker 杀进程"), "'四卡 Worker 杀进程'");
+    assert.equal(shq("it's"), "'it'\\''s'");
+    assert.equal(shq("a'b c"), "'a'\\''b c'");
+});
