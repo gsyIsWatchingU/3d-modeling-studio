@@ -122,6 +122,8 @@ async function pollPaint(jobId) {
 // scp 拉回远端产物（临时文件 → 大小/SHA 校验 → 原子改名）
 async function downloadRemoteArtifact(remotePath, targetPath, maxBytes = 300 * 1024 * 1024) {
     const cfg = gsy013Cfg();
+    // 目标目录可能尚不存在（paint 任务首次落盘），必须先创建，否则 scp 目标报错
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
     const tmpLocal = `${targetPath}.${process.pid}.${Date.now()}.tmp`;
     const tmpRemote = path.join(os.tmpdir() === '' ? '/tmp' : '/tmp', `mp-dl-${crypto.randomBytes(6).toString('hex')}`);
     // 先复制到远端 /tmp 再 scp，避免路径中有特殊字符时 scp 解析歧义
