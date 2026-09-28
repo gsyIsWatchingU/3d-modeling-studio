@@ -987,6 +987,7 @@ const championDb = {
                 release_zip_bytes: data.release_zip_bytes ?? null,
                 accepted_at: now,
                 acceptance_mode: data.acceptance_mode || 'automatic',
+                published: data.published || false,
                 human_review: data.human_review || 'not_performed',
                 metrics: data.metrics || {},
                 prev_attempt_id: existing ? existing.attempt_id : null
