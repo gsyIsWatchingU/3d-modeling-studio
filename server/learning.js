@@ -497,7 +497,113 @@ function createLearningRouter({ wake = () => {} } = {}) {
         });
     });
 
+    // ---------- ForgeLoop v3：无人值守自动闭环（acceptance_mode=automatic，human_review=not_performed） ----------
+    // 创建/登记无人循环 Attempt（幂等：同一 job_id 返回现有 Attempt）
+    router.post('/v3/attempts', requireUser, (req, res) => {
+        try {
+            const body = req.body || {};
+            const existing = learningDb.findAttemptByJobId(body.job_id);
+            if (existing) return res.status(200).json({ success: true, data: existing, reused: true });
+            const attempt = learningDb.createAttempt({
+                job_id: body.job_id || null,
+                owner_id: req.user.id,
+                domain: body.domain || 'model',
+                project: body.project || null,
+                stage: body.stage || null,
+                asset_id: body.asset_id || null,
+                event_id: body.event_id || null,
+                evidence: body.evidence || {},
+                contract_hash: body.contract_hash || null,
+                asset_kind: body.asset_kind || 'prop',
+                profile: body.profile || 'xhs_mobile',
+                seed: body.seed ?? 1234,
+                execution_plan: body.execution_plan || null,
+                pipeline: body.pipeline || {},
+                metrics: body.metrics || {},
+                artifacts: body.artifacts || {},
+                based_on_attempt_id: body.based_on_attempt_id || null,
+                changed_variable: body.changed_variable || null,
+                auto_flow_state: 'generated',
+                acceptance_mode: 'automatic',
+                human_review: 'not_performed',
+                auto_chain_index: body.auto_chain_index ?? 0
+            });
+            res.status(201).json({ success: true, data: attempt, reused: false });
+        } catch (error) {
+            res.status(400).json({ success: false, error: error.message });
+        }
+    });
+
+    // 上报外部评估（游戏/资产侧硬门禁结果）；保存为 auto_evaluation.external，由 iterate 消费
+    router.post('/v3/attempts/:id/evaluate', requireUser, (req, res) => {
+        try {
+            const attempt = learningDb.findAttemptById(req.params.id);
+            if (!attempt) return res.status(404).json({ success: false, error: 'Attempt 不存在' });
+            const { hard_gates, defects, metrics, gpu_review, gpu_prompt, gpu_images } = req.body || {};
+            learningDb.saveAutoEvaluation(attempt.id, {
+                external: { hard_gates: hard_gates || {}, defects: defects || [], metrics: metrics || {}, gpu_review: gpu_review || null, gpu_prompt: gpu_prompt || null, gpu_images: gpu_images || [] },
+                reopen: true
+            });
+            res.json({ success: true, data: learningDb.findAttemptById(attempt.id) });
+        } catch (error) {
+            res.status(400).json({ success: false, error: error.message });
+        }
+    });
+
+    // 触发无人循环迭代（generated → auto_evaluating → auto_repairing → auto_accepted/auto_rejected/exhausted/quarantined）
+    router.post('/v3/attempts/:id/iterate', requireUser, (req, res) => {
+        (async () => {
+            const autoLoop = require('./auto-loop');
+            const attempt = learningDb.findAttemptById(req.params.id);
+            if (!attempt) return res.status(404).json({ success: false, error: 'Attempt 不存在' });
+            // 服务端默认 evaluate：优先读取已上报的 external 评估；无则跑本地门禁
+            const evaluate = async (a) => a.auto_evaluation?.external || null;
+            const result = await autoLoop.runAutoIteration(attempt.id, { ownerId: req.user.id, evaluate });
+            res.json({ success: true, data: result });
+        })().catch(err => res.status(400).json({ success: false, error: err.message }));
+    });
+
+    // 自动接入（auto_accepted → champion → 正式区；staging 检查由调用方完成并附报告）
+    router.post('/v3/attempts/:id/integrate', requireUser, (req, res) => {
+        (async () => {
+            const autoLoop = require('./auto-loop');
+            const { project, asset_id, domain, staging_report, release_zip } = req.body || {};
+            const result = await autoLoop.autoIntegrate(attemptIdFor(req.params.id), {
+                project, asset_id, domain,
+                verifyStaging: async () => staging_report || { ok: false, report: 'missing_staging_report' },
+                buildReleaseZip: async () => release_zip || null
+            });
+            res.json({ success: true, data: result });
+        })().catch(err => res.status(400).json({ success: false, error: err.message }));
+    });
+
+    // v3 总览：状态分布 + champions + 策略版本
+    router.get('/v3/overview', requireUser, (req, res) => {
+        const { championDb, v3PolicyDb } = require('./db');
+        const attempts = learningDb.listAttempts({ ownerId: req.user.id, limit: 500 });
+        const flowDist = {};
+        for (const a of attempts) flowDist[a.auto_flow_state] = (flowDist[a.auto_flow_state] || 0) + 1;
+        res.json({
+            success: true,
+            data: {
+                flow_distribution: flowDist,
+                champions: championDb.list(),
+                policies: v3PolicyDb.list(),
+                acceptance_mode: 'automatic',
+                human_review: 'not_performed',
+                published: false
+            }
+        });
+    });
+
     return router;
+}
+
+function attemptIdFor(id) {
+    // 兼容传入 job_id 的形式
+    if (String(id).startsWith('LA')) return id;
+    const byJob = learningDb.findAttemptByJobId(id);
+    return byJob ? byJob.id : id;
 }
 
 function describeRule(param) {

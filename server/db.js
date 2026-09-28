@@ -45,6 +45,10 @@ function initialData() {
         experiments: [],
         // ForgeLoop v2：统一生产契约（按项目 ID 存储，文档含 sha256 证据锚点）
         production_contracts: [],
+        // ForgeLoop v3：无人值守自动闭环（策略版本、champion、自动循环锁）
+        v3_policies: [],
+        champions: [],
+        auto_locks: [],
         settings: { default_skill_ids: [BUILTIN_SKILL.id], default_skill_id: BUILTIN_SKILL.id },
         user_settings: {},
         spu_config: { provider: 'forge3d', api_url: '', api_key: '' },
@@ -80,6 +84,9 @@ function normalizeDb(raw) {
     db.modeling_policies = Array.isArray(db.modeling_policies) ? db.modeling_policies : [];
     db.experiments = Array.isArray(db.experiments) ? db.experiments : [];
     db.production_contracts = Array.isArray(db.production_contracts) ? db.production_contracts : [];
+    db.v3_policies = Array.isArray(db.v3_policies) ? db.v3_policies : [];
+    db.champions = Array.isArray(db.champions) ? db.champions : [];
+    db.auto_locks = Array.isArray(db.auto_locks) ? db.auto_locks : [];
     // ForgeLoop v2 幂等回填：旧 Attempt 只增字段（domain 回填为 model），不重命名/不删除现有数据。
     // 重复 normalize 不会产生第二次变更，迁移天然幂等。
     for (const attempt of db.learning_attempts) {
@@ -90,6 +97,11 @@ function normalizeDb(raw) {
         if (attempt.event_id === undefined) attempt.event_id = null;
         if (attempt.evidence === undefined) attempt.evidence = {};
         if (attempt.contract_hash === undefined) attempt.contract_hash = null;
+        // ForgeLoop v3：旧 Attempt 回填无人值守状态（默认停留在旧流程语义）
+        if (attempt.auto_flow_state === undefined) attempt.auto_flow_state = 'exhausted';
+        if (attempt.acceptance_mode === undefined) attempt.acceptance_mode = null;
+        if (attempt.human_review === undefined) attempt.human_review = 'not_performed';
+        if (attempt.auto_flow_history === undefined) attempt.auto_flow_history = [];
     }
     db.user_notifications = db.user_notifications && typeof db.user_notifications === 'object' ? db.user_notifications : {};
     db.user_settings = db.user_settings && typeof db.user_settings === 'object' ? db.user_settings : {};
@@ -656,6 +668,13 @@ const learningDb = {
                 auto_status: data.auto_status || 'unknown', // succeeded / failed
                 failure_category: data.failure_category || null,
                 failure_detail: data.failure_detail || null,
+                // ForgeLoop v3：无人值守自动闭环状态与验收模式
+                auto_flow_state: data.auto_flow_state || 'generated', // generated/auto_evaluating/auto_repairing/auto_accepted/auto_rejected/exhausted/quarantined
+                auto_flow_history: [],                                // append-only 状态迁移记录
+                acceptance_mode: data.acceptance_mode || null,        // automatic / human
+                human_review: data.human_review || 'not_performed',   // not_performed / performed
+                auto_chain_index: data.auto_chain_index ?? 0,         // 无人循环第几轮（0=父，1..N=子）
+                auto_evaluation: null,                                // 最近一次自动评估结果快照
                 // 以下字段仅由人工审片/复盘追加，不回改输入快照
                 human_verdict: 'pending',                // pending / approved / rejected
                 human_category: null,
@@ -668,6 +687,50 @@ const learningDb = {
                 updated_at: now
             };
             db.learning_attempts.push(attempt);
+            return clone(attempt);
+        });
+    },
+    // ForgeLoop v3：状态迁移（append-only），校验合法迁移表；绝不触碰 human_* 字段。
+    setAutoFlowState(attemptId, state, { detail, evidence } = {}) {
+        return mutate(db => {
+            const attempt = db.learning_attempts.find(a => a.id === attemptId);
+            if (!attempt) return null;
+            const valid = AUTO_FLOW_TRANSITIONS[attempt.auto_flow_state] || [];
+            if (!valid.includes(state)) throw new Error(`非法状态迁移: ${attempt.auto_flow_state} → ${state}`);
+            const now = new Date().toISOString();
+            attempt.auto_flow_history.push({ from: attempt.auto_flow_state, to: state, at: now, detail: detail || null, evidence: evidence || null });
+            attempt.auto_flow_state = state;
+            attempt.updated_at = now;
+            return clone(attempt);
+        });
+    },
+    // manual_override（可选能力）：人工将终态 reset 回 generated 重新进入无人循环（保留历史迁移记录）
+    resetAutoFlow(attemptId, { reason } = {}) {
+        return mutate(db => {
+            const attempt = db.learning_attempts.find(a => a.id === attemptId);
+            if (!attempt) return null;
+            if (!['auto_rejected', 'exhausted', 'quarantined'].includes(attempt.auto_flow_state)) {
+                throw new Error(`仅终态可 reset 重入无人循环（当前 ${attempt.auto_flow_state}）`);
+            }
+            const now = new Date().toISOString();
+            attempt.auto_flow_history.push({ from: attempt.auto_flow_state, to: 'generated', at: now, detail: `manual_override: ${reason || '重入无人循环'}`, evidence: null });
+            attempt.auto_flow_state = 'generated';
+            attempt.updated_at = now;
+            return clone(attempt);
+        });
+    },
+    listAttemptsByFlowState(state) {
+        return clone(readDb().learning_attempts.filter(a => a.auto_flow_state === state));
+    },
+    listAutoAccepted() {
+        return clone(readDb().learning_attempts.filter(a => a.auto_flow_state === 'auto_accepted'));
+    },
+    saveAutoEvaluation(attemptId, evaluation) {
+        return mutate(db => {
+            const attempt = db.learning_attempts.find(a => a.id === attemptId);
+            if (!attempt) return null;
+            attempt.auto_evaluation = { ...(attempt.auto_evaluation || {}), ...evaluation, at: new Date().toISOString() };
+            attempt.updated_at = new Date().toISOString();
             return clone(attempt);
         });
     },
@@ -887,6 +950,106 @@ const learningDb = {
     }
 };
 
+// ForgeLoop v3：无人值守状态机合法迁移表（generated → auto_evaluating → auto_repairing → auto_accepted / auto_rejected / exhausted / quarantined）
+const AUTO_FLOW_TRANSITIONS = {
+    generated: ['auto_evaluating', 'auto_rejected', 'exhausted', 'quarantined'],
+    auto_evaluating: ['auto_accepted', 'auto_rejected', 'auto_repairing', 'exhausted', 'quarantined'],
+    auto_repairing: ['auto_evaluating', 'exhausted', 'quarantined'],
+    auto_rejected: ['auto_repairing', 'exhausted', 'quarantined'],
+    auto_accepted: ['exhausted'],
+    exhausted: [],
+    quarantined: []
+};
+
+// ForgeLoop v3：champion（每个 项目+资产+领域 一个当前最优自动验收候选）与 release 记录
+const championDb = {
+    list() { return clone(readDb().champions); },
+    get({ project, asset_id, domain }) {
+        return clone(readDb().champions.find(c =>
+            (project === undefined || c.project === project) &&
+            (asset_id === undefined || c.asset_id === asset_id) &&
+            (domain === undefined || c.domain === domain)) || null);
+    },
+    set(data) {
+        return mutate(db => {
+            const now = new Date().toISOString();
+            const existing = db.champions.find(c =>
+                c.project === data.project && c.asset_id === data.asset_id && c.domain === data.domain);
+            const record = {
+                project: data.project || null,
+                asset_id: data.asset_id || null,
+                domain: data.domain || 'model',
+                attempt_id: data.attempt_id,
+                job_id: data.job_id || null,
+                artifact_sha: data.artifact_sha || null,
+                release_zip: data.release_zip || null,
+                release_zip_sha: data.release_zip_sha || null,
+                release_zip_bytes: data.release_zip_bytes ?? null,
+                accepted_at: now,
+                acceptance_mode: data.acceptance_mode || 'automatic',
+                human_review: data.human_review || 'not_performed',
+                metrics: data.metrics || {},
+                prev_attempt_id: existing ? existing.attempt_id : null
+            };
+            if (existing) Object.assign(existing, record);
+            else db.champions.push(record);
+            return clone(record);
+        });
+    }
+};
+
+// ForgeLoop v3：版本化自动质量策略（六领域硬门禁+阈值+评分钩子）
+const v3PolicyDb = {
+    list(domain) {
+        return clone(readDb().v3_policies
+            .filter(p => domain === undefined || p.domain === domain)
+            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+    },
+    latest(domain) {
+        const list = readDb().v3_policies.filter(p => p.domain === domain).sort((a, b) => (b.version || 0) - (a.version || 0));
+        return clone(list[0] || null);
+    },
+    save(data) {
+        return mutate(db => {
+            const now = new Date().toISOString();
+            const existing = db.v3_policies.find(p => p.domain === data.domain && p.version === data.version);
+            const record = {
+                domain: data.domain,
+                version: data.version,
+                policy: data.policy,             // { hard_gates[], quality_metrics[], regression[], comparison[], thresholds{} }
+                threshold_units: data.threshold_units || {},
+                change_log: data.change_log || [],
+                created_at: existing?.created_at || now,
+                updated_at: now
+            };
+            if (existing) Object.assign(existing, record);
+            else db.v3_policies.push(record);
+            return clone(record);
+        });
+    }
+};
+
+// ForgeLoop v3：自动循环并发锁（服务重启后锁超时自动失效，可重入；同一 attempt/job 不会重复提交 GPU）
+const autoLockDb = {
+    acquire(key, owner, ttlMs = 10 * 60 * 1000) {
+        return mutate(db => {
+            const now = Date.now();
+            db.auto_locks = db.auto_locks.filter(l => l.key !== key || l.expires_at > now);
+            if (db.auto_locks.some(l => l.key === key)) return null; // 已存在未过期锁
+            db.auto_locks.push({ key, owner, expires_at: now + ttlMs, acquired_at: new Date(now).toISOString() });
+            return clone(db.auto_locks.find(l => l.key === key));
+        });
+    },
+    release(key, owner) {
+        return mutate(db => {
+            const before = db.auto_locks.length;
+            db.auto_locks = db.auto_locks.filter(l => !(l.key === key && l.owner === owner));
+            return before !== db.auto_locks.length;
+        });
+    },
+    list() { return clone(readDb().auto_locks); }
+};
+
 // ---------- ForgeLoop v2：统一生产契约（按项目 ID 存储，文档含 sha256 证据锚点） ----------
 const contractDb = {
     list(ownerId) {
@@ -960,6 +1123,10 @@ module.exports = {
     factoryDb,
     learningDb,
     contractDb,
+    championDb,
+    v3PolicyDb,
+    autoLockDb,
+    AUTO_FLOW_TRANSITIONS,
     getStats,
     dbPath,
     uploadDir,
