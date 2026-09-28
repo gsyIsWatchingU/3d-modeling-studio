@@ -32,10 +32,13 @@ function sshArgs() {
             '-p', cfg.port, `${cfg.user}@${cfg.host}`];
 }
 
-function scpArgs(from, to) {
+function scpArgs() {
     const cfg = gsy013Cfg();
+    // 只返回选项；调用方自行追加 [源, 目标] 两个位置参数。
+    // 切勿在此带上 user@host 或其它尾部 token：会被 scp 当成多余的源文件，
+    // 产生 "Not a directory" / "No such file or directory"。
     return ['scp', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '-o', 'StrictHostKeyChecking=yes',
-            '-P', cfg.port, from, to];
+            '-P', cfg.port];
 }
 
 function runCmd(cmd, args, { timeoutMs = 120000, maxOutput = 4 * 1024 * 1024 } = {}) {
@@ -61,6 +64,7 @@ async function submitPaint({ parentId, taskId, meshPath, materialPath, params })
     if (!cfg.host) throw new Error('MP_GSY013_SSH_HOST 未配置');
     const remoteDir = `/tmp/mp-paint-${taskId.toLowerCase()}`;
     const meshName = path.basename(meshPath);
+    await remoteExec(`mkdir -p '${remoteDir}'`);
     await runCmd(scpArgs()[0], [...scpArgs().slice(1), meshPath, `${cfg.user}@${cfg.host}:${remoteDir}/${meshName}`]);
     let materialArg = '';
     if (materialPath && fs.existsSync(materialPath)) {

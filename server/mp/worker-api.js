@@ -74,13 +74,18 @@ function publicParent(parent, tasks) {
             updatedAt: t.updated_at
         }))
     }));
-    const candidates = tasks.filter(t => t.stage === 'shape' && t.status === TASK_STATUS.COMPLETED).map(t => ({
-        candidateKey: t.candidateKey,
-        seed: t.seed,
-        preview: t.outputArtifacts.find(a => a.key === 'preview') ? `/api/mp/artifacts/${parent.id}/${t.id}/${encodeURIComponent(t.outputArtifacts.find(a => a.key === 'preview').fileName)}` : null,
-        mesh: t.outputArtifacts.find(a => a.key === 'mesh') ? `/api/mp/artifacts/${parent.id}/${t.id}/${encodeURIComponent(t.outputArtifacts.find(a => a.key === 'mesh').fileName)}` : null,
-        qc: t.qcReport ? `/api/mp/artifacts/${parent.id}/${t.id}/${encodeURIComponent(t.qcReport.fileName)}` : null
-    }));
+    const candidates = tasks.filter(t => t.stage === 'shape' && t.status === TASK_STATUS.COMPLETED).map(t => {
+        const draftTask = tasks.find(d => d.stage === 'draft_preview' && d.candidateKey === t.candidateKey && d.status === TASK_STATUS.COMPLETED);
+        const previewArt = draftTask?.outputArtifacts.find(a => a.key === 'preview') || t.outputArtifacts.find(a => a.key === 'preview');
+        const qcTask = tasks.find(q => q.stage === 'candidate_qc' && q.status === TASK_STATUS.COMPLETED);
+        return {
+            candidateKey: t.candidateKey,
+            seed: t.seed,
+            preview: previewArt ? `/api/mp/artifacts/${parent.id}/${draftTask?.id || t.id}/${encodeURIComponent(previewArt.fileName)}` : null,
+            mesh: t.outputArtifacts.find(a => a.key === 'mesh') ? `/api/mp/artifacts/${parent.id}/${t.id}/${encodeURIComponent(t.outputArtifacts.find(a => a.key === 'mesh').fileName)}` : null,
+            qc: qcTask?.qcReport ? `/api/mp/artifacts/${parent.id}/${qcTask.id}/${encodeURIComponent(qcTask.qcReport.fileName)}` : null
+        };
+    });
     return { ...parent, children, candidates };
 }
 

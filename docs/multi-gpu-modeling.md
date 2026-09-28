@@ -6,9 +6,12 @@
 
 将现有串行 Forge3D 建模流程扩展为「父任务 + 阶段子任务」的可恢复并行工作流：
 
-- **4×Tesla T4（新机 `gsy0930-b9b54d748-88kqg`）**：Shape 网格生成、多种子候选并行、UniRig 绑骨与蒙皮、动作重定向。
+- **4×Tesla T4（新机 `gsy0930-b9b54d748-88kqg`）**：Shape 网格生成、多种子候选并行、UniRig 绑骨与蒙皮。
 - **L20（`gsy013`，1×L20）**：Hunyuan Paint / PBR 贴图（只接收被选中的候选）、重型阶段兜底、串行生产兜底。
-- **CPU（T4 96 核）**：Blender 规范化、尺寸/朝向/枢轴、GLB 导出、预览渲染、自动质检。
+- **CPU（Blender 阶段）**：规范化、尺寸/朝向/枢轴、GLB 导出、预览渲染、自动质检。
+  - **实测约束**：T4 为 Ubuntu 18.04（glibc 2.27），Blender 4.5.13 需要 glibc 2.28+，无法在 T4 运行；
+    因此所有 Blender 类阶段（draft_preview/candidate_qc/normalize/export/preview/validate/retarget_animation）
+    由 **gsy013 的 2 个 CPU Worker** 承担（gsy013 为 Ubuntu 22.04，Blender 4.5.13 正常）。T4 只跑 4 个 GPU Worker（shape/rig）。
 - 两种并行模式：`parallel_assets`（多资产并行）、`candidate_race`（同资产多 seed 候选竞争，仅选中者进入 Paint）。
 - 合并语义：**父任务聚合子任务 → 选择候选 → Blender 场景/动画组装 → manifest 聚合**，不是拆分单个角色焊接。
 
@@ -17,8 +20,8 @@
 | 主机 | 集群 IP | 角色 | 服务 |
 |---|---|---|---|
 | mygpu（`gsy-5757878579-wsdv7`） | 10.42.0.166 | 控制面 | 3d-modeling-studio :3300（0.0.0.0）；本机 Forge3D :8091（2×L20，串行生产引擎，127.0.0.1 不变） |
-| gsy013（`gsy-s-9cff6dc4f-65m6j`） | 10.42.0.177 | L20 Paint 机 | Forge3D :8091（新增 paint 端点后绑定 0.0.0.0，令牌鉴权；127.0.0.1 本机调用免令牌） |
-| T4（`gsy0930-b9b54d748-88kqg`） | 10.42.9.119 | 4×T4 + 96 CPU | 6 个 Worker（4 GPU + 2 CPU），无 Forge3D API、无 Redis |
+| T4（`gsy0930-b9b54d748-88kqg`） | 10.42.9.119 | 4×T4 + 96 CPU | 4 个 GPU Worker（shape/rig），无 Forge3D API、无 Redis、无 Blender 能力 |
+| gsy013（`gsy-s-9cff6dc4f-65m6j`） | 10.42.0.177 | L20 Paint + CPU Blender | Forge3D :8091（paint 端点，令牌鉴权）；2 个 CPU Worker（Blender 类阶段） |
 
 实测连通性：`T4 → mygpu:3300 HTTP 200`；`mygpu → gsy013:10.42.0.177` 可达；`gsy013 → mygpu` **不可达**；
 NAT 端口（31611/30660/30627）仅暴露 SSH。因此：
@@ -51,14 +54,14 @@ NAT 端口（31611/30660/30627）仅暴露 SSH。因此：
 | capability | 执行方 | 阶段 |
 |---|---|---|
 | `shape:t4` | T4 GPU Worker 0..3（动态领取） | shape |
-| `draft_preview:t4` | T4 CPU Worker | draft_preview |
 | `paint:l20` | gsy013 Forge3D worker（L20） | paint |
-| `normalize:t4` | T4 CPU Worker | normalize |
-| `rig:t4` | T4 GPU Worker | rig |
-| `animation:t4` | T4 GPU Worker（Blender 重定向，CPU 执行） | retarget_animation |
-| `export:t4` / `preview:t4` / `validate:t4` | T4 CPU Worker | export / render_preview / validate |
+| `rig:t4` | T4 GPU Worker（UniRig，真实 GPU） | rig |
+| `draft_preview:t4` / `candidate_qc:t4` | gsy013 CPU Worker（Blender） | draft_preview / candidate_qc |
+| `normalize:t4` / `export:t4` / `preview:t4` / `validate:t4` | gsy013 CPU Worker（Blender） | normalize / export / render_preview / validate |
+| `animation:t4` | gsy013 CPU Worker（Blender 重定向） | retarget_animation |
 
 四个 GPU Worker 各自 `CUDA_VISIBLE_DEVICES=0..3`，用相同能力配置轮询；空闲 Worker 可接手任意兼容阶段，不写死“角色卡/道具卡”。
+CPU Worker 用相同能力列表（`gsy013-launch.sh`），任意一个都可接手任何 Blender 阶段。
 
 ## 5. 阶段工作流
 
@@ -78,7 +81,7 @@ NAT 端口（31611/30660/30627）仅暴露 SSH。因此：
 ## 6. 调度与故障恢复（控制面，mygpu 应用内）
 
 - 领取：`queued` 且 `nextRunAt<=now` 的任务按能力+优先级原子置为 `leased`（`leaseOwner=workerId`、`leaseExpiresAt=now+TTL`）。
-- 心跳：Worker 每 30s 上报；`leaseExpiresAt` 到期未续 → 重新入队（`queued`，attempt 不变）。
+- 心跳：Worker 每 20s 上报（`worker.py` 心跳线程）；`leaseExpiresAt`（10min）到期未续 → 重新入队（`queued`，attempt 不变）。
 - 重试：失败 → `retry_wait`，`nextRunAt = now + 30s * 2^(attempt-1)`（上限 10min）；`attempt >= maxAttempts` → `dead_letter`。
 - 取消：父任务取消 → 所有非终态子任务 `cancelled`；Worker 通过轮询/心跳响应感知取消并中止命令。
 - 幂等：创建子任务时按幂等键去重；`complete/fail` 校验 `leaseOwner` 与当前状态，过期租约的迟到上报被拒绝。
@@ -108,9 +111,10 @@ NAT 端口（31611/30660/30627）仅暴露 SSH。因此：
 ## 9. 部署组件
 
 - 控制面：`server/mp/`（constants / store / artifacts / scheduler / paint / worker-api），挂载于既有 Express 应用。
-- T4：`/workspace/runtime` 独立 Python 3.10/3.11 + Blender + 模型（拷贝自 gsy013，SHA 记录）；
-  6 个 Worker（`deploy/mp/worker.py`，纯标准库），supervisor 管理。
-- gsy013：`/v1/stages/paint` 端点（`X-Forge3D-Token`），复用既有 worker 队列，旧 `/v1/jobs` 不变。
+- T4：`/workspace/runtime` 独立 Python 3.10/3.11 + 模型（拷贝自 gsy013，SHA 记录）；4 个 GPU Worker（`deploy/mp/t4-launch.sh`，纯标准库）。
+- gsy013：`/v1/stages/paint` 端点（`X-Forge3D-Token`），复用既有 worker 队列，旧 `/v1/jobs` 不变；
+  2 个 CPU Worker（`deploy/mp/gsy013-launch.sh`，Blender 阶段 + animation:t4）。
+- Paint 传输：控制面 scp（`paint.js`，**scp 参数只含选项 + [源,目标]**，避免多余 token 被当成源文件）→ gsy013 本机 curl 提交 → 轮询 → scp 拉回，全程 SHA-256 记录。
 
 ## 10. 回退
 

@@ -466,13 +466,14 @@ def main() -> int:
 
     while True:
         try:
-            poll = http_json("GET", f"{args.api_url}/api/mp/worker/poll"
-                              f"?capabilities={urllib.parse.quote(args.capabilities)}"
-                              f"&worker={urllib.parse.quote(args.host)}"
-                              f"&host={urllib.parse.quote(args.host)}"
-                              f"&gpu_index={args.gpu_index or ''}"
-                              f"&gpu_uuid={urllib.parse.quote(args.gpu_uuid)}",
-                             args.token, timeout=30)
+            poll_url = (f"{args.api_url}/api/mp/worker/poll"
+                        f"?capabilities={urllib.parse.quote(args.capabilities)}"
+                        f"&worker={urllib.parse.quote(args.host)}"
+                        f"&host={urllib.parse.quote(args.host)}"
+                        f"&gpu_uuid={urllib.parse.quote(args.gpu_uuid)}")
+            if args.gpu_index is not None:
+                poll_url += f"&gpu_index={args.gpu_index}"
+            poll = http_json("GET", poll_url, args.token, timeout=30)
             task = (poll.get("data") or {}).get("id") and poll.get("data") or None
         except Exception as exc:
             print(f"[worker {args.capabilities}] 轮询失败: {exc}", flush=True)

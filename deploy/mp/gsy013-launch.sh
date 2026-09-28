@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# gsy013 CPU Worker 启动脚本（幂等，可重复执行）。
+# 2 × CPU Worker：Blender 类阶段。
+# 背景：T4（Ubuntu 18.04 / glibc 2.27）无法运行 Blender 4.5.13（需 glibc 2.28+），
+#       gsy013 为 Ubuntu 22.04 且 Blender 4.5.13 运行正常，故 CPU/Blender 阶段在此执行。
+# 能力：draft_preview / candidate_qc / normalize / export / preview / validate / retarget_animation
+set -euo pipefail
+
+TOKEN_FILE=/workspace/etc/mp-worker-token
+[ -f "$TOKEN_FILE" ] || { echo "缺少 $TOKEN_FILE" >&2; exit 21; }
+TOKEN=$(tr -d '\n' < "$TOKEN_FILE")
+export MP_WORKER_TOKEN="$TOKEN"
+export MP_API_URL="${MP_API_URL:-http://10.42.0.166:3300}"
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PID_DIR=/workspace/runtime/worker-pids
+mkdir -p "$PID_DIR" /workspace/logs/mp /workspace/runtime/work
+
+# gsy013 环境覆盖（worker.py env_base 的 T4 默认值不适用）
+export FORGE3D_PROJECT_ROOT="${FORGE3D_PROJECT_ROOT:-/workspace/projects/forge3d}"
+export FORGE3D_MODEL_ROOT="${FORGE3D_MODEL_ROOT:-/workspace/models/forge3d}"
+export FORGE3D_DATA_ROOT="${FORGE3D_DATA_ROOT:-/workspace/3d-assets}"
+export FORGE3D_BLENDER="${FORGE3D_BLENDER:-/workspace/.tools/blender/blender}"
+export FORGE3D_HUNYUAN_PYTHON="${FORGE3D_HUNYUAN_PYTHON:-/workspace/.envs/hunyuan3d/bin/python}"
+export FORGE3D_UNIRIG_PYTHON="${FORGE3D_UNIRIG_PYTHON:-/workspace/.envs/unirig/bin/python}"
+export HF_HOME="${HF_HOME:-/workspace/models/forge3d/huggingface}"
+export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
+export HY3DGEN_MODELS="${HY3DGEN_MODELS:-/workspace/models/forge3d/hy3dgen}"
+export U2NET_HOME="${U2NET_HOME:-/workspace/models/forge3d/rembg}"
+export FORGE3D_ENABLE_PBR="${FORGE3D_ENABLE_PBR:-0}"
+export MP_PYTHON="${MP_PYTHON:-/workspace/.envs/hunyuan3d/bin/python}"
+
+CPU_CAPS="draft_preview:t4,candidate_qc:t4,normalize:t4,export:t4,preview:t4,validate:t4,animation:t4"
+
+start_worker() {
+  local name="$1" caps="$2" gpu="$3"
+  local pid_file="$PID_DIR/$name.pid"
+  if [ -f "$pid_file" ] && kill -0 "$(cat "$pid_file")" 2>/dev/null; then
+    echo "$name 已在运行 pid=$(cat "$pid_file")"
+    return 0
+  fi
+  nohup bash "$SCRIPT_DIR/worker.sh" "$caps" "$gpu" >/dev/null 2>&1 &
+  echo $! > "$pid_file"
+  echo "$name 已启动 pid=$! (gpu=$gpu)"
+}
+
+start_worker worker-cpu0 "$CPU_CAPS" -
+start_worker worker-cpu1 "$CPU_CAPS" -
+
+echo "=== 进程 ==="
+for f in "$PID_DIR"/*.pid; do
+  echo "$(basename "$f"): $(cat "$f")"
+done

@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # T4 四卡 Worker 启动脚本（幂等，可重复执行）。
-# 4 × GPU Worker：CUDA_VISIBLE_DEVICES=0..3，能力 shape:t4,rig:t4,animation:t4
-# 2 × CPU Worker：Blender 阶段（draft_preview/candidate_qc/normalize/export/preview/validate）
+# 4 × GPU Worker：CUDA_VISIBLE_DEVICES=0..3，能力 shape:t4,rig:t4
+# 说明：T4 为 Ubuntu 18.04（glibc 2.27），Blender 4.5.13 需要 glibc 2.28+，
+#       故 Blender 类 CPU 阶段（draft_preview/candidate_qc/normalize/export/preview/validate/
+#       retarget_animation）由 gsy013 的 CPU Worker 承担（见 gsy013-launch.sh）。
 set -euo pipefail
 
 TOKEN_FILE=/workspace/etc/mp-worker-token
@@ -14,8 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PID_DIR=/workspace/runtime/worker-pids
 mkdir -p "$PID_DIR" /workspace/logs/mp /workspace/runtime/work
 
-GPU_CAPS="shape:t4,rig:t4,animation:t4"
-CPU_CAPS="draft_preview:t4,candidate_qc:t4,normalize:t4,export:t4,preview:t4,validate:t4"
+GPU_CAPS="shape:t4,rig:t4"
 
 start_worker() {
   local name="$1" caps="$2" gpu="$3"
@@ -33,8 +34,6 @@ start_worker worker-gpu0 "$GPU_CAPS" 0
 start_worker worker-gpu1 "$GPU_CAPS" 1
 start_worker worker-gpu2 "$GPU_CAPS" 2
 start_worker worker-gpu3 "$GPU_CAPS" 3
-start_worker worker-cpu0 "$CPU_CAPS" -
-start_worker worker-cpu1 "$CPU_CAPS" -
 
 echo "=== 进程 ==="
 for f in "$PID_DIR"/*.pid; do
