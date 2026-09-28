@@ -36,6 +36,9 @@ const { startFactoryWorker } = require('./factory-worker');
 const { startStageWorker } = require('./stage-worker');
 const { createContractRouter } = require('./production-contract');
 const { backfillTerminalHistory } = require('./retrospective-worker');
+// ForgeLoop v3：启动即初始化六领域自动质量策略（幂等，旧库跳过已存在版本）
+const { ensurePolicies } = require('./auto-policy');
+ensurePolicies();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
