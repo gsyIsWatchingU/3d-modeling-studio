@@ -79,8 +79,16 @@ async function gpuReviewImage(imagePath, promptText) {
         const script = `
 import base64, json, urllib.request
 img = base64.b64encode(open(${JSON.stringify(imagePath)}, 'rb').read()).decode()
+model = "qwen3.5-9b-fp8"
+try:
+    req0 = urllib.request.Request("http://127.0.0.1:8002/v1/models", headers={"Content-Type": "application/json"})
+    out0 = json.loads(urllib.request.urlopen(req0, timeout=15).read())
+    ids = [m.get("id") for m in out0.get("data", [])]
+    if ids: model = ids[0]
+except Exception:
+    pass
 body = {
-  "model": "qwen3.5-27b-fp8",
+  "model": model,
   "messages": [{"role": "user", "content": [
       {"type": "image_url", "image_url": {"url": "data:image/png;base64," + img}},
       {"type": "text", "text": ${JSON.stringify(promptText)}}
@@ -104,7 +112,7 @@ except Exception as e:
         if (!text || text.startsWith('GPU_REVIEW_FAIL')) return null;
         // 解析 0~1 评分：优先取 "评分：0.8" 之类；否则由确定性指标给中性
         const m = text.match(/(?:评分|score|质量)[：:]\s*(0?\.\d+|1(?:\.0)?)/i);
-        return { score: m ? Math.max(0, Math.min(1, parseFloat(m[1]))) : 0.5, text: text.slice(0, 400), model: 'qwen3.5-27b-fp8' };
+        return { score: m ? Math.max(0, Math.min(1, parseFloat(m[1]))) : 0.5, text: text.slice(0, 400), model: 'qwen3.5-9b-fp8(auto)' };
     } catch {
         return null;
     }
