@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # gsy013 CPU Worker 启动脚本（幂等，可重复执行）。
-# 2 × CPU Worker：Blender 类阶段。
+# 6 × CPU Worker（数量可用 MP_CPU_WORKERS 调整）：Blender 类阶段。
 # 背景：T4（Ubuntu 18.04 / glibc 2.27）无法运行 Blender 4.5.13（需 glibc 2.28+），
 #       gsy013 为 Ubuntu 22.04 且 Blender 4.5.13 运行正常，故 CPU/Blender 阶段在此执行。
+#       本机 128 核 / ~470GB 空闲内存，2 个 worker 会让 draft_preview/normalize/export/
+#       validate 等阶段严重排队（实测 wall 是 run 的 7-16 倍），故扩容到 6 个。
 # 能力：draft_preview / candidate_qc / normalize / export / preview / validate / retarget_animation
 set -euo pipefail
 
@@ -43,13 +45,15 @@ start_worker() {
     echo "$name 已在运行 pid=$(cat "$pid_file")"
     return 0
   fi
-  nohup bash "$SCRIPT_DIR/worker.sh" "$caps" "$gpu" >/dev/null 2>&1 &
+  MP_WORKER_TAG="$name" nohup bash "$SCRIPT_DIR/worker.sh" "$caps" "$gpu" >/dev/null 2>&1 &
   echo $! > "$pid_file"
   echo "$name 已启动 pid=$! (gpu=$gpu)"
 }
 
-start_worker worker-cpu0 "$CPU_CAPS" -
-start_worker worker-cpu1 "$CPU_CAPS" -
+CPU_WORKERS="${MP_CPU_WORKERS:-6}"
+for i in $(seq 0 $((CPU_WORKERS - 1))); do
+  start_worker "worker-cpu$i" "$CPU_CAPS" -
+done
 start_worker worker-gpu0 "$RIG_CAPS" 0
 
 echo "=== 进程 ==="

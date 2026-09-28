@@ -14,7 +14,21 @@ def main() -> None:
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--seed", required=True, type=int)
+    # 质量参数：CLI 优先，其次环境变量，最后回退到既有默认（不改变串行产线行为）。
+    parser.add_argument("--num-inference-steps", type=int, default=None)
+    parser.add_argument("--guidance-scale", type=float, default=None)
+    parser.add_argument("--octree-resolution", type=int, default=None)
     args = parser.parse_args()
+
+    steps = args.num_inference_steps if args.num_inference_steps is not None \
+        else int(os.environ.get("FORGE3D_SHAPE_STEPS", "30"))
+    guidance = args.guidance_scale if args.guidance_scale is not None \
+        else float(os.environ.get("FORGE3D_SHAPE_GUIDANCE", "5.0"))
+    octree = args.octree_resolution
+    if octree is None:
+        octree_env = os.environ.get("FORGE3D_SHAPE_OCTREE")
+        octree = int(octree_env) if octree_env else None
+
     repo = Path(args.repo).resolve()
     sys.path.insert(0, str(repo))
     sys.path.insert(0, str(repo / "hy3dshape"))
@@ -33,7 +47,16 @@ def main() -> None:
     else:
         image = image.convert("RGBA")
     generator = torch.Generator(device="cpu").manual_seed(args.seed)
-    mesh = pipeline(image=image, num_inference_steps=30, guidance_scale=5.0, generator=generator)[0]
+    call_kwargs = {
+        "image": image,
+        "num_inference_steps": steps,
+        "guidance_scale": guidance,
+        "generator": generator,
+    }
+    if octree:
+        call_kwargs["octree_resolution"] = octree
+    print(f"[shape] steps={steps} guidance={guidance} octree={octree if octree else 'default'}", flush=True)
+    mesh = pipeline(**call_kwargs)[0]
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     shape_output = output.with_suffix(".shape.glb")

@@ -31,6 +31,8 @@ if [[ "$GPU_INDEX" != "-" ]]; then
 fi
 
 HOST="$(hostname)"
+WORKER_TAG="${MP_WORKER_TAG:-}"
+LOG_NAME="${CAPS%%:*}.$GPU_TAG${WORKER_TAG:+.$WORKER_TAG}.log"
 exec "$PY" "$WORKER_PY" \
   --capabilities "$CAPS" \
   --api-url "$API_URL" \
@@ -39,4 +41,4 @@ exec "$PY" "$WORKER_PY" \
   --work-dir "$WORK_DIR" \
   --stage-timeout "$STAGE_TIMEOUT" \
   ${GPU_ARGS[@]+"${GPU_ARGS[@]}"} \
-  > "$LOG_DIR/${CAPS%%:*}.$GPU_TAG.log" 2>&1
+  > "$LOG_DIR/$LOG_NAME" 2>&1

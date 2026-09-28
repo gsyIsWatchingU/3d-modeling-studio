@@ -13,6 +13,14 @@ TOKEN=$(tr -d '\n' < "$TOKEN_FILE")
 export MP_WORKER_TOKEN="$TOKEN"
 export MP_API_URL="${MP_API_URL:-http://10.42.0.166:3300}"
 
+# Shape 质量参数（T4 单卡探针实测，red-sweater-boy 参考图，seed 20260928）：
+#   steps 30→50：模型自带默认值，+52s，峰值显存不变（8873MiB），表面保真更好。
+#   octree 384→512：峰值 10025MiB < 15360MiB（T4 安全），面数 274k→488k，几何更锐；+210s/候选。
+# shape 仅占总耗时小头且 4 卡并行，多出的时间被 Blender CPU 扩容省下的排队远超抵消。
+# 想让 shape 更快可用环境变量覆盖：FORGE3D_SHAPE_OCTREE=384 / FORGE3D_SHAPE_STEPS=30。
+export FORGE3D_SHAPE_STEPS="${FORGE3D_SHAPE_STEPS:-50}"
+export FORGE3D_SHAPE_OCTREE="${FORGE3D_SHAPE_OCTREE:-512}"
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PID_DIR=/workspace/runtime/worker-pids
 mkdir -p "$PID_DIR" /workspace/logs/mp /workspace/runtime/work
