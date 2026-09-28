@@ -98,6 +98,34 @@ test('v3.1 平均分不得掩盖局部严重失败：mean=0.575 但 min=0.2 → 
     assert.equal(r.attempt.based_on_attempt_id, a.id); // 子 Attempt 独立
 });
 
+// ---------- 1b. 子 Attempt 继承的旧样本不得覆盖 continue 阶段上传的新样本 ----------
+test('v3.1 证据隔离：continue 上传的新样本优先，继承自父的 0.2 旧样本不得毒化子评估', async () => {
+    ensurePolicies();
+    const a = realDefectAttempt();
+    learningDb.setAutoFlowState(a.id, 'auto_rejected', { detail: '父被拒' });
+    const v = { param: 'animation.root_translation_normalization', to: 'normalize_root_translation' };
+    const { attempt: child } = createAutoRepairChild(a, v, { ownerId: OWNER });
+    // 修复产物回填（新 SHA），子 Attempt 继承的 evidence.samples 仍是父的 0.2/0.95 旧样本
+    learningDb.updateAttemptTerminal(child.job_id, {
+        auto_status: 'succeeded',
+        artifacts: { glb_file: '/workspace/3d-assets/repair/JV31-NEW/output-hang-normalized.glb', glb_sha: 'CHILD-NORM-SHA' },
+        evidence: { animation: { root_translation_ratio: 0.05 }, raw_generic_glb: { glb_file: '/workspace/3d-assets/repair/JV31-NEW/output-hang-normalized.glb', glb_sha: 'CHILD-NORM-SHA', root_translation_ratio: 0.05 } }
+    });
+    learningDb.setAutoFlowState(child.id, 'auto_evaluating', { detail: '等 staging 证据' });
+    const ext = {
+        hard_gates: passGates('animation'),
+        regression: { playthrough: true, audio_trace: true },
+        defects: [],
+        samples: [
+            { image: '/tmp/v31-staging/desktop-boy-02.png', mode: 'runtime_rotation_only', viewport: 'desktop', camera: 'game-camera', animation_time: 0.5, artifact_sha: 'CHILD-NORM-SHA', vlm_score: 0.85, vlm_text: '评分：0.85 动作自然、手绳接触良好、比例正常。', vlm_labels: [] },
+            { image: '/tmp/v31-staging/mobile-boy-03.png', mode: 'runtime_rotation_only', viewport: 'mobile', camera: 'game-camera', animation_time: 0.8, artifact_sha: 'CHILD-NORM-SHA', vlm_score: 0.8, vlm_text: '评分：0.8 动作自然。', vlm_labels: [] }
+        ]
+    };
+    const r = await runAutoIteration(child.id, { ownerId: OWNER, evaluate: async () => ext, repair: null });
+    assert.equal(r.state, 'auto_accepted');
+    assert.equal(r.evaluation.score_vector.vlm_min, 0.8); // 0.2 旧样本未混入
+    assert.equal(r.evaluation.comparison.better_than_parent, true);
+});
 // ---------- 2. critical 标签硬失败 ----------
 test('v3.1 critical 标签（比例失调/僵硬/结构崩塌/穿模）→ 硬失败缺陷', async () => {
     const a = realDefectAttempt();

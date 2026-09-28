@@ -127,7 +127,7 @@ def main() -> None:
     for f in frames:
         bpy.context.scene.frame_set(int(f), subframe=f % 1)
         bpy.context.view_layer.update()
-        world_pts.append(pelvis.matrix_world.translation.copy())
+        world_pts.append((armature.matrix_world @ pelvis.matrix).translation.copy())  # PoseBone: world = armature.matrix_world @ bone.matrix
 
     anchor = world_pts[0].copy()
     rel = [p - anchor for p in world_pts]
@@ -149,24 +149,15 @@ def main() -> None:
     # 强制循环接缝：末帧位移 == 首帧位移
     detrended[-1] = detrended[0].copy()
 
-    # 写回局部平移 fcurve：新世界位置 = anchor + detrended(t)，再转到 pelvis 的父空间
-    parent = pelvis.parent
+    # 写回局部平移 fcurve：骨盆局部平移 = 世界去趋势位移（绕 rest 的小幅振荡），
+    # 旋转到骨盆骨骼 rest 局部轴系；绝不写入锚点绝对位置（那是 root/场景定位，由运行时与查看器负责）
     data_path = f'pose.bones["{pelvis.name}"].location'
     existing = [fc for fc in action.fcurves if fc.data_path == data_path]
     for fc in existing:
         action.fcurves.remove(fc)
 
-    local_vals: list[Vector] = []
-    for i, f in enumerate(frames):
-        bpy.context.scene.frame_set(int(f), subframe=f % 1)
-        bpy.context.view_layer.update()
-        new_world = anchor + detrended[i]
-        parent_world = parent.matrix_world if parent is not None else None
-        if parent_world is not None:
-            local = parent_world.inverted() @ new_world
-        else:
-            local = new_world
-        local_vals.append(local)
+    rest_rot_inv = (armature.matrix_world @ pelvis.bone.matrix_local).to_3x3().inverted()
+    local_vals: list[Vector] = [rest_rot_inv @ v for v in detrended]
 
     for axis in range(3):
         fc = action.fcurves.new(data_path=data_path, index=axis)

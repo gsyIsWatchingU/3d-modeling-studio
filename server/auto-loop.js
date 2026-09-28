@@ -38,9 +38,10 @@ function buildVlmSamples(attempt, external = {}) {
     const scope = ev.scope || external.scope || 'runtime_rotation_only_gameplay';
     const defaultMode = String(scope).includes('raw') ? 'raw_generic_glb' : 'runtime_rotation_only';
     const artifactSha = attempt.artifacts?.glb_sha || attempt.artifacts?.artifact_sha || null;
-    const rawSamples = Array.isArray(ev.samples) && ev.samples.length
-        ? ev.samples.map(s => ({ ...s }))
-        : (Array.isArray(external.samples) && external.samples.length ? external.samples.map(s => ({ ...s })) : []);
+    // 新鲜外部证据优先（continue 阶段上传的最新样本）；子 Attempt 继承的父样本属旧证据，不得覆盖新证据
+    const rawSamples = Array.isArray(external.samples) && external.samples.length
+        ? external.samples.map(s => ({ ...s }))
+        : (Array.isArray(ev.samples) && ev.samples.length ? ev.samples.map(s => ({ ...s })) : []);
     // 旧证据兼容：gpu_images → 每张一个样本；precomputed gpu_review（含文本）→ 一个 runtime 样本（文本含 critical 标签时仍触发硬失败）
     if (!rawSamples.length && Array.isArray(external.gpu_images) && external.gpu_images.length) {
         for (const img of external.gpu_images) rawSamples.push({ image: img });
