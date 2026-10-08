@@ -133,4 +133,25 @@ async function generateGpuSfx(project, spec, dir, signal) {
     };
 }
 
-module.exports = { gpuSfxEnabled, buildSfxRequests, installGeneratedSfx, generateGpuSfx };
+async function generateGpuEvent(task, plan, targetDir) {
+    const outputRoot = path.resolve(process.env.FACTORY_GPU_AUDIO_ROOT || '/workspace/3d-assets/game-audio');
+    const python = process.env.FACTORY_GPU_AUDIO_PYTHON || 'python3';
+    const script = path.resolve(process.env.FACTORY_GPU_AUDIO_SCRIPT || path.join(root, 'tools/gpu-audio/audio_factory.py'));
+    const options = { python, timeout: 900000 };
+    const readiness = await runFactory([script, 'doctor'], options);
+    const backend = readiness.backends?.sfx;
+    if (!backend?.runtime_installed || !backend.dependencies_ready || !backend.cuda_available || !backend.weights_cached) throw new Error('GPU 音效依赖、CUDA 或权重尚未就绪');
+    const requestDir = path.join(targetDir, 'requests');
+    fs.mkdirSync(requestDir, { recursive: true });
+    const requestFile = path.join(requestDir, `${task.id}.json`);
+    const request = { project_id: `studio-${task.id}`, event_id: 'sound', backend: 'sfx', prompt: plan.prompt, duration: plan.duration, variants: 1, seed: 92301, loop: false };
+    atomicFile(requestFile, JSON.stringify(request));
+    const gpu = String(Math.max(0, Math.min(7, Number.parseInt(process.env.FACTORY_GPU_AUDIO_GPU || '1', 10) || 0)));
+    const manifest = await runFactoryWhenAvailable([script, 'generate', '--request', requestFile, '--output-root', outputRoot, '--gpu', gpu, '--wait-lock', '300'], options);
+    const { source, output, manifestPath } = validateGeneratedItem({ id: task.id, manifest, manifestPath: manifest.manifest }, outputRoot);
+    const filename = `${task.id}.wav`;
+    fs.copyFileSync(source, path.join(targetDir, filename));
+    return { filename, bytes: fs.statSync(source).size, sha256: output.sha256, duration: output.duration, readiness, evidence: { device: manifest.device, model: manifest.model, job_id: manifest.job_id, manifest_sha256: fileDigest(manifestPath), generation_status: 'generated', technical_status: 'passed', review_status: 'pending' } };
+}
+
+module.exports = { gpuSfxEnabled, buildSfxRequests, installGeneratedSfx, generateGpuSfx, generateGpuEvent };

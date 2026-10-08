@@ -38,7 +38,7 @@ async function selectProject(id) {
     $('advancedWorkspace').open = false;
     $('welcome').hidden = true; $('workspace').hidden = false;
     $('projectTitle').textContent = active.name; $('projectBrief').textContent = active.brief;
-    history.replaceState(null, '', `/?project=${encodeURIComponent(id)}`); renderProjects(); renderRun(); renderWorkflow();
+    history.replaceState(null, '', `/game-factory.html?project=${encodeURIComponent(id)}`); renderProjects(); renderRun(); renderWorkflow();
 }
 function renderRun() {
     if (!active) return;
@@ -299,7 +299,7 @@ async function showFile(route, filename) {
     }
     const p = document.createElement('p'), link = document.createElement('a'); link.href = url; link.download = filename.split('/').at(-1); link.textContent = '下载此文件'; p.append(link); $('filePreview').append(p);
 }
-$('newProject').onclick = () => { active = null; runId = ''; stageId = ''; stageRunId = ''; $('workspace').hidden = true; $('welcome').hidden = false; $('stageWorkspace').hidden = true; $('advancedWorkspace').open = false; $('preview').removeAttribute('src'); previewKey = ''; filesKey = ''; stageOutputKey = ''; $('createForm').reset(); $('toast').hidden = true; history.replaceState(null, '', '/'); renderProjects(); $('brief').focus(); };
+$('newProject').onclick = () => { active = null; runId = ''; stageId = ''; stageRunId = ''; $('workspace').hidden = true; $('welcome').hidden = false; $('stageWorkspace').hidden = true; $('advancedWorkspace').open = false; $('preview').removeAttribute('src'); previewKey = ''; filesKey = ''; stageOutputKey = ''; $('createForm').reset(); $('toast').hidden = true; history.replaceState(null, '', '/game-factory.html'); renderProjects(); $('brief').focus(); };
 $('createForm').onsubmit = event => { event.preventDefault(); act(async () => {
     $('create').disabled = true;
     const brief = $('brief').value.trim();

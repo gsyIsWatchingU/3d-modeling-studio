@@ -16,6 +16,9 @@ const {
     uploadDir,
     modelDir
 } = require('./db');
+const { studioDb } = require('./db');
+const { createStudioRouter } = require('./studio');
+const { startStudioWorker } = require('./studio-worker');
 const {
     detectImageType,
     parseSkillDocument,
@@ -63,6 +66,7 @@ app.use((req, res, next) => {
 });
 // 统一账号认证：/auth/*、/me、/logout
 app.use(createAuthRouter());
+app.use('/api/studio', createStudioRouter({ wakeAudio: () => studioWorker.wake() }));
 app.use('/api/production', createProductionRouter());
 app.use('/api/factory', createFactoryRouter());
 // ForgeLoop v2：生产契约读取/更新、质量报告、重跑质量检查
@@ -298,6 +302,13 @@ app.post('/api/notification-config/test', requireUser, async (req, res) => {
 app.post('/api/jobs', requireModelUser, limitJobSubmissions, imageUpload.array('images', MAX_IMAGES), (req, res) => {
     let imageNames = [];
     try {
+        const studioPlan = req.body.studio_plan_id ? studioDb.get('plans', req.body.studio_plan_id, req.user.id) : null;
+        if (req.body.studio_plan_id && (!studioPlan || studioPlan.kind !== '3d')) throw new Error('3D 制作计划不存在');
+        if (studioPlan?.status === 'submitted') {
+            removeFiles(req.files || []);
+            return res.status(202).json({ success: true, data: jobWithNotifications(jobDb.findById(studioPlan.task_id)) });
+        }
+        if (studioPlan) Object.assign(req.body, { name: studioPlan.name, prompt: studioPlan.prompt, asset_kind: studioPlan.asset_kind, profile: studioPlan.profile, skill_ids: [], inline_skill: '', production_plan_id: '' });
         if (!getProviderConfig().apiUrl) throw new Error('建模服务尚未配置，请先打开设置完成配置');
         imageNames = normalizeUploadedImages(req.files || []);
         const productionPlan = req.body.production_plan_id ? productionPlanDb.findById(req.body.production_plan_id, req.user.id) : null;
@@ -316,7 +327,7 @@ app.post('/api/jobs', requireModelUser, limitJobSubmissions, imageUpload.array('
         const prompt = String(req.body.prompt || '').trim();
         if (prompt.length > 1000) throw new Error('建模提示词不能超过 1000 字');
         if (extraSkills.length !== extraIds.length) throw new Error('所选 Skill 不存在或不属于当前用户');
-        const snapshot = createSkillSnapshot(defaultSkills, extraSkills, inlineSkill);
+        const snapshot = studioPlan?.skill_snapshot || createSkillSnapshot(defaultSkills, extraSkills, inlineSkill);
         if (buildProviderPrompt(snapshot, prompt).length > 12000) throw new Error('提示词与 Skill 合并后超过 12000 字，请精简内容');
         const availableChannels = getChannelStatus(req.user.id);
         const channels = req.isMcp && req.body.channels === undefined ? ['feishu'] : safeStringList(req.body.channels, CHANNELS);
@@ -325,6 +336,7 @@ app.post('/api/jobs', requireModelUser, limitJobSubmissions, imageUpload.array('
         let name = String(req.body.name || path.parse(req.files[0].originalname).name || '新模型').trim().slice(0, 80);
         if (name.length < 2) name = `${name || '新'}模型`;
         const job = jobDb.create({
+            ...(studioPlan ? { execution_plan: studioPlan.execution_plan, studio_plan_id: studioPlan.id } : {}),
             owner_id: req.user.id,
             production_plan_id: productionPlan?.id,
             name,
@@ -333,6 +345,7 @@ app.post('/api/jobs', requireModelUser, limitJobSubmissions, imageUpload.array('
             requested_channels: requestedChannels,
             base_url: process.env.PUBLIC_URL || process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`
         });
+        if (studioPlan) studioDb.change('plans', studioPlan.id, req.user.id, item => { item.status = 'submitted'; item.task_id = job.id; });
         modelWorker.wake();
         res.status(202).json({ success: true, data: jobWithNotifications(job) });
     } catch (error) {
@@ -431,6 +444,7 @@ const modelWorker = startModelWorker();
 modelWorkerWake = () => modelWorker.wake();
 const factoryWorker = startFactoryWorker();
 const stageWorker = startStageWorker();
+const studioWorker = startStudioWorker();
 
 // ForgeLoop 历史回填（幂等）：把已到终态但尚未记录 Attempt 的任务补记，使线上完成模型进入待审片队列。
 try {
@@ -450,5 +464,6 @@ process.on('SIGTERM', () => {
     notificationWorker.stop();
     factoryWorker.stop();
     stageWorker.stop();
+    studioWorker.stop();
     process.exit(0);
 });

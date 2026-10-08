@@ -1,0 +1,50 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { fixture, waitFor } = require('../test-support/studio-fixture');
+
+test('资源工作室：私有预览、明确公开、AI 密钥隔离与确认后异步建模', { timeout: 45000 }, async t => {
+    const f = await fixture(); t.after(() => f.close());
+    assert.equal((await f.api('/studio/resources', {}, 0)).status, 401);
+    assert.equal((await f.api('/studio/showcase', {}, 0)).status, 200);
+    assert.match(await (await fetch(f.base)).text(), /资源工作室/);
+    const assets = [];
+    for (const [name, bytes, filename] of [['图像测试', f.png, 'test.png'], ['模型测试', f.glb, 'test.glb'], ['音频测试', f.wav, 'test.wav']]) {
+        const response = await f.upload(name, bytes, filename); assert.equal(response.status, 201); assets.push((await response.json()).data);
+    }
+    assert.deepEqual(assets.map(asset => asset.kind), ['2d', '3d', 'sfx']);
+    assert.equal((await f.upload('伪造图片', Buffer.from('fake image'), 'fake.png')).status, 400);
+    const listing = (await (await f.api('/studio/resources')).json()).data;
+    assert.equal(listing.length, 3); assert.ok(!JSON.stringify(listing).includes(f.root));
+    assert.equal((await f.api(listing[0].url.replace('/api', ''), {}, 2)).status, 404);
+    assert.equal((await f.api(listing[0].url.replace('/api', ''))).status, 200);
+    assert.equal((await f.json(`/studio/resources/${assets[0].id}/share`, 'POST', {})).status, 400);
+    assert.equal((await f.json(`/studio/resources/${assets[0].id}/share`, 'POST', { reviewed: true }, 2)).status, 400);
+    assert.equal((await f.json(`/studio/resources/${assets[0].id}/share`, 'POST', { reviewed: true })).status, 200);
+    let publicList = (await (await f.api('/studio/showcase', {}, 0)).json()).data;
+    assert.equal(publicList.length, 1); assert.equal(publicList[0].name, '图像测试'); assert.equal((await f.api(publicList[0].url.replace('/api', ''), {}, 0)).status, 200);
+    await f.api(`/studio/resources/${assets[0].id}/share`, { method: 'DELETE' });
+    assert.equal((await f.api(publicList[0].url.replace('/api', ''), {}, 0)).status, 404);
+    assert.equal((await f.json('/studio/config', 'PUT', { url: `http://127.0.0.1:${f.provider.address().port}/chat`, model: 'fixture-model', api_key: 'fixture-private-key' })).status, 200);
+    const config = await (await f.api('/studio/config')).text(); assert.ok(!config.includes('fixture-private-key')); assert.match(config, /"api_key_configured":true/);
+    const otherConfig = (await (await f.api('/studio/config', {}, 2)).json()).data; assert.equal(otherConfig.api_key_configured, false);
+    const planResponse = await f.json('/studio/plans', 'POST', { kind: '3d', brief: '制作黄铜台灯道具，适合网页展示。' });
+    assert.equal(planResponse.status, 201); const plan = (await planResponse.json()).data;
+    assert.equal(f.captures.plans[0].authorization, 'Bearer fixture-private-key'); assert.equal(f.captures.gpu.length, 0);
+    assert.equal(plan.execution_plan.generation.triangle_budget, 24000);
+    const makeForm = () => { const form = new FormData(); form.append('studio_plan_id', plan.id); form.append('prompt', '恶意覆盖计划'); form.append('images', new Blob([f.png], { type: 'image/png' }), 'reference.png'); return form; };
+    assert.equal((await f.api('/jobs', { method: 'POST', body: makeForm() }, 2)).status, 400);
+    const response = await f.api('/jobs', { method: 'POST', body: makeForm() }); const payload = await response.json(); assert.equal(response.status, 202, JSON.stringify(payload)); const job = payload.data;
+    const repeated = (await (await f.api('/jobs', { method: 'POST', body: makeForm() })).json()).data; assert.equal(repeated.id, job.id);
+    const finished = await waitFor(async () => { const data = (await (await f.api('/jobs/' + job.id)).json()).data; return data.status === 'succeeded' && data; });
+    assert.equal(f.captures.gpu.length, 1); assert.equal(finished.input.prompt, plan.prompt); assert.equal(f.captures.gpu[0].sha256, plan.execution_plan.sha256);
+    const persisted = JSON.parse(fs.readFileSync(path.join(f.root, 'db.json'))); assert.equal(persisted.studio_plans.find(item => item.id === plan.id).task_id, job.id);
+    assert.equal((await (await f.api('/studio/resources')).json()).data.length, 4);
+    f.captures.invalid = true;
+    assert.equal((await f.json('/studio/plans', 'POST', { kind: '3d', brief: '参数越界不允许执行' })).status, 400);
+    assert.equal(f.captures.gpu.length, 1);
+    f.captures.invalid = false;
+    const soundPlan = (await (await f.json('/studio/plans', 'POST', { kind: 'sfx', brief: '木门打开的吱呀声，2秒。' })).json()).data;
+    assert.equal(soundPlan.duration, 2); assert.equal(soundPlan.status, 'draft');
+});

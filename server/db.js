@@ -37,6 +37,11 @@ function initialData() {
         api_tokens: [],
         production_plans: [],
         factory_projects: [],
+        studio_assets: [],
+        studio_plans: [],
+        studio_tasks: [],
+        studio_shares: [],
+        studio_configs: {},
         user_notifications: {},
         // ForgeLoop 自进化经验库：不可变 Attempt、结构化复盘、策略、受控实验
         learning_attempts: [],
@@ -79,6 +84,8 @@ function normalizeDb(raw) {
     db.api_tokens = Array.isArray(db.api_tokens) ? db.api_tokens : [];
     db.production_plans = Array.isArray(db.production_plans) ? db.production_plans : [];
     db.factory_projects = Array.isArray(db.factory_projects) ? db.factory_projects : [];
+    for (const key of ['studio_assets', 'studio_plans', 'studio_tasks', 'studio_shares']) db[key] = Array.isArray(db[key]) ? db[key] : [];
+    db.studio_configs = db.studio_configs && typeof db.studio_configs === 'object' ? db.studio_configs : {};
     db.learning_attempts = Array.isArray(db.learning_attempts) ? db.learning_attempts : [];
     db.retrospectives = Array.isArray(db.retrospectives) ? db.retrospectives : [];
     db.modeling_policies = Array.isArray(db.modeling_policies) ? db.modeling_policies : [];
@@ -402,6 +409,7 @@ const jobDb = {
                 production_plan_id: data.production_plan_id || null,
                 requested_channels: data.requested_channels || [],
                 base_url: data.base_url || '',
+                ...(data.studio_plan_id ? { studio_plan_id: data.studio_plan_id } : {}),
                 attempt: 0,
                 max_attempts: data.max_attempts || 3,
                 next_run_at: now,
@@ -528,6 +536,26 @@ const factoryDb = {
             return clone(project);
         });
     }
+};
+
+const studioDb = {
+    list(collection, ownerId) { return clone(readDb()[`studio_${collection}`].filter(item => ownerId === undefined || item.owner_id === ownerId)); },
+    get(collection, id, ownerId) { return this.list(collection, ownerId).find(item => item.id === id) || null; },
+    create(collection, data, ownerId) {
+        return mutate(db => {
+            const item = { ...clone(data), id: crypto.randomUUID(), owner_id: ownerId, created_at: new Date().toISOString() };
+            db[`studio_${collection}`].push(item); return clone(item);
+        });
+    },
+    change(collection, id, ownerId, fn) {
+        return mutate(db => {
+            const item = db[`studio_${collection}`].find(value => value.id === id && value.owner_id === ownerId);
+            if (!item) throw new Error('资源或任务不存在');
+            fn(item); return clone(item);
+        });
+    },
+    config(ownerId) { return clone(readDb().studio_configs[ownerId] || {}); },
+    saveConfig(ownerId, data) { return mutate(db => { db.studio_configs[ownerId] = { ...(db.studio_configs[ownerId] || {}), ...data }; }); }
 };
 
 const notificationDb = {
@@ -1111,6 +1139,7 @@ function getStats() {
 }
 
 module.exports = {
+    studioDb,
     modelDb,
     skillDb,
     settingsDb,

@@ -25,6 +25,10 @@ mkdir -p "$DEPLOY_PATH"
 if command -v rsync >/dev/null 2>&1; then
   rsync -av --delete \
     --exclude='data/' \
+    --exclude='resource-studio/' \
+    --exclude='uploads/' \
+    --exclude='models/' \
+    --exclude='db.json' \
     --exclude='logs/' \
     --exclude='run/' \
     --exclude='.env' \
@@ -34,7 +38,7 @@ if command -v rsync >/dev/null 2>&1; then
     "$RELEASE_DIR/" "$DEPLOY_PATH/"
 else
   echo "[warn] 未找到 rsync，改用 tar 覆盖（不会删除被保护目录之外的旧文件）"
-  tar -C "$RELEASE_DIR" -cf - --exclude='./data' --exclude='./logs' \
+  tar -C "$RELEASE_DIR" -cf - --exclude='./data' --exclude='./resource-studio' --exclude='./uploads' --exclude='./models' --exclude='./db.json' --exclude='./.env' --exclude='./logs' \
     --exclude='./run' --exclude='./node_modules' --exclude='./.git' . \
     | tar -C "$DEPLOY_PATH" -xf -
 fi

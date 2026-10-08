@@ -39,6 +39,9 @@ jobs:
             --exclude='./run' \
             --exclude='./uploads' \
             --exclude='./models' \
+            --exclude='./resource-studio' \
+            --exclude='./db.json' \
+            --exclude='./.env*' \
             --exclude='./.deploy-tmp' \
             .
 

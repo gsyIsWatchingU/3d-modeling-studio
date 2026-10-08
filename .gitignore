@@ -7,6 +7,7 @@ data/
 db.json
 uploads/
 models/
+resource-studio/
 
 # Logs
 logs/

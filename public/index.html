@@ -1,93 +1,35 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width,initial-scale=1">
-    <meta name="description" content="从一个游戏想法开始，沿着清晰步骤完成制作、试玩与交付。">
-    <title>游戏生产工厂</title>
-    <link rel="icon" href="/icon.png" type="image/png">
-    <link rel="stylesheet" href="/factory.css">
+    <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="description" content="展示、预览和管理 2D、3D 与音效资源，用自然语言指挥自有 GPU 创作。">
+    <title>资源工作室 · GPU 创作</title><link rel="icon" href="/icon.png" type="image/png"><link rel="stylesheet" href="/studio.css">
+    <script defer src="/vendor/three/build/three.min.js"></script><script defer src="/vendor/three/examples/js/controls/OrbitControls.js"></script><script defer src="/vendor/three/examples/js/loaders/GLTFLoader.js"></script><script defer src="/auth.js"></script><script defer src="/studio.js"></script>
 </head>
 <body>
-<header class="topbar">
-    <a class="brand" href="/"><img class="brand-icon" src="/icon.png" alt=""><span class="brand-text"><b>游戏生产工厂_</b><span>GAME FACTORY</span></span></a>
-    <nav><a href="/modeling.html">3D 建模工位</a><a href="/modeling.html?settings=1">通知与 MCP</a><span id="account"></span><button id="logout" class="quiet">退出</button></nav>
-</header>
+<header class="topbar"><a class="brand" href="/"><img src="/icon.png" alt=""><span><b>资源工作室_</b><small>ASSET STUDIO / GPU</small></span></a><nav><a href="/modeling.html">3D 专业工位 ↗</a><button id="settingsButton">模型设置</button><span id="account"></span><button id="logout" class="quiet">退出</button></nav></header>
 <div class="layout">
-    <aside class="sidebar">
-        <div class="sidebar-heading"><strong>我的游戏</strong><button id="newProject" class="small">＋ 新建</button></div>
-        <div id="projects" class="project-list"></div>
-        <div class="sidebar-note"><span class="dot"></span> 网站与 MCP 共用生产线<p>项目、版本和产物会自动保存，关闭页面后生产仍会继续。</p></div>
-    </aside>
+    <aside class="sidebar"><div class="eyebrow">我的创作空间</div><button class="nav-item active" data-view="library"><span>▦ 资源库</span><span id="totalCount">—</span></button><button class="nav-item" data-view="create"><span>✳ GPU 创作</span><span>↗</span></button><button id="uploadButton" class="upload-button">＋ 上传资源</button><div class="sidebar-note"><span class="dot"></span> 自有 GPU · 后台执行<p>资源与任务自动保存。生成完成后回到资源库，随时预览与下载。</p></div></aside>
     <main>
-        <section id="welcome" class="welcome">
-            <div class="eyebrow">第一步 / 描述创意</div>
-            <h1>先告诉我们，你想做什么游戏。</h1>
-            <p class="lead">不用先懂策划、美术或代码。创建项目后，页面会一直告诉你当前进度和唯一的下一步。</p>
-            <div class="journey" aria-label="制作流程">
-                <div class="active"><b>1</b><span><strong>描述创意</strong><small>说清游戏想法</small></span></div><i>→</i>
-                <div><b>2</b><span><strong>生成游戏</strong><small>后台完成制作</small></span></div><i>→</i>
-                <div><b>3</b><span><strong>试玩验收</strong><small>亲自检查体验</small></span></div><i>→</i>
-                <div><b>4</b><span><strong>下载或发布</strong><small>拿到完整工程</small></span></div>
-            </div>
-            <form id="createForm" class="create-card">
-                <div class="section-head"><div><h2>描述你的游戏创意</h2><p>现在只需要完成这一件事，至少写清主角、目标和氛围。</p></div><span class="tag">约 1 分钟</span></div>
-                <label for="brief">你想做一款怎样的游戏？</label>
-                <textarea id="brief" minlength="10" maxlength="4000" required rows="5" autofocus placeholder="例如：小小守灯人穿过三座浮岛，寻找失散的光晶，与岛上的居民交谈，躲开巡逻机关，最后重新点亮灯塔。"></textarea>
-                <label for="name">给它一个名字 <span class="optional">可选</span></label>
-                <input id="name" maxlength="80" placeholder="留空时会根据创意自动命名">
-                <details class="more-settings"><summary>更多设置：指定美术方向</summary><label for="style">美术方向 <span class="optional">可选</span></label><input id="style" maxlength="500" placeholder="例如：深蓝夜色、温暖灯光、简洁手绘感"></details>
-                <div class="form-footer"><p>创建后先进入项目主页，不会立刻启动生产；你可以确认下一步再开始。</p><button type="submit" class="primary" id="create">创建项目，查看下一步 →</button></div>
-            </form>
+        <section id="libraryView">
+            <div class="eyebrow">ASSET LIBRARY / 资源库</div><div class="hero"><div><h1>我的资源，随时预览。</h1><p class="lead">2D 图像、3D 模型与事件音效，在一个地方展示与管理。</p></div><button class="primary" id="startCreate">用自然语言创作 ↗</button></div>
+            <div class="stats"><div><span>01 / 2D 图像</span><b id="imageCount">—</b><small>原画 · 贴图 · 矢量素材</small></div><div><span>02 / 3D 模型</span><b id="modelCount">—</b><small>角色 · 道具 · 场景</small></div><div><span>03 / 事件音效</span><b id="audioCount">—</b><small>动作 · 环境 · 交互提示</small></div></div>
+            <div class="library-toolbar"><div class="filters" aria-label="资源类型"><button data-kind="all" class="active" aria-pressed="true">全部资源</button><button data-kind="2d" aria-pressed="false">2D 图像</button><button data-kind="3d" aria-pressed="false">3D 模型</button><button data-kind="sfx" aria-pressed="false">事件音效</button></div><input id="search" type="search" placeholder="搜索资源名称…" aria-label="搜索资源名称"></div>
+            <div class="section-line"><span id="resultCount">正在读取资源…</span><button id="refresh" class="quiet">↻ 刷新</button></div><div id="libraryError" class="error" role="alert" hidden></div><div id="resourceGrid" class="resource-grid"></div><div id="emptyLibrary" class="empty" hidden><span class="empty-symbol">▦</span><h2>从第一份资源开始</h2><p>上传已有图像、模型或音效，也可以描述需求，让 GPU 为你创作。</p><button id="emptyUpload">＋ 上传资源</button></div>
         </section>
-
-        <section id="workspace" hidden>
-            <div class="section-head project-heading"><div><div class="eyebrow">游戏项目</div><h1 id="projectTitle"></h1><p id="projectBrief"></p></div><button id="modeling" class="quiet compact-action">打开 3D 建模工位 ↗</button></div>
-            <nav id="projectFlow" class="project-flow" aria-label="项目进度"><div data-flow="idea"><b>1</b><span>创意</span></div><i></i><div data-flow="production"><b>2</b><span>制作</span></div><i></i><div data-flow="review"><b>3</b><span>试玩验收</span></div><i></i><div data-flow="delivery"><b>4</b><span>交付</span></div></nav>
-
-            <section class="next-task panel" aria-live="polite">
-                <div class="next-task-copy"><div class="eyebrow" id="nextKicker">下一步</div><h2 id="nextTitle">生成第一个可玩版本</h2><p id="nextDescription">AI 会在后台完成策划、剧本、素材、声音与关卡组装。</p><div id="nextProgress" class="next-progress" hidden><span></span></div></div>
-                <div class="next-task-actions"><button id="nextPrimary" class="primary">开始生成可玩版本 →</button><button id="nextSecondary" class="quiet">分阶段精修</button></div>
-            </section>
-
-            <details id="advancedWorkspace" class="advanced-workspace">
-                <summary><span><strong>分阶段精修与版本控制</strong><small>需要逐步生成、人工批准或定向迭代时再展开</small></span><em>高级控制</em></summary>
-                <div class="advanced-content">
-                    <section class="guided-panel panel">
-                        <div class="section-head"><div><h2>7 个独立制作工位</h2><p>按顺序逐步把关；这是精修路径，不会与上方的一键生成同时启动。</p></div><span class="tag">可暂停 · 可续做</span></div>
-                        <div id="workflowStages" class="workflow-stages"></div>
-                        <section id="stageWorkspace" class="stage-workspace" hidden>
-                            <div class="section-head"><div><div class="eyebrow" id="stageNumber"></div><h3 id="stageTitle"></h3><p id="stageDescription"></p></div><select id="stageVersions" aria-label="阶段版本"></select></div>
-                            <div id="stageDependency" class="stage-dependency"></div>
-                            <div id="stagePrompt"><label for="stageInstructions">本阶段制作要求</label><textarea id="stageInstructions" rows="3" maxlength="3000" placeholder="描述这一步需要重点处理的内容；留空则按项目目标生成。"></textarea></div>
-                            <div class="button-row"><button id="startStage" class="primary">开始本阶段</button><button id="openModeling" class="secondary" hidden>进入 3D 建模工位 ↗</button></div>
-                            <div id="stageStatus" role="status"></div><div id="stageError" class="error" hidden></div>
-                            <div id="stageOutput" class="stage-output"><p class="muted">选择阶段后可在这里查看最新产物。</p></div>
-                            <div id="conceptUpload" hidden><label for="conceptImages">上传实际预览图</label><input id="conceptImages" type="file" accept="image/png,image/jpeg,image/webp" multiple><button id="uploadConcept" class="secondary">保存到当前阶段版本</button><p class="muted">制作单不是图片。请上传实际生成或绘制的预览图，最多 6 张、单张 10 MB。</p></div>
-                            <div id="stageReview" hidden><label class="check"><input id="stageConfirmed" type="checkbox"> 我已检查当前阶段的实际产物</label><label for="stageReviewNotes">阶段验收记录</label><textarea id="stageReviewNotes" rows="2" minlength="5" maxlength="2000" placeholder="记录通过内容或需要修改的问题。"></textarea><div class="button-row"><button id="approveStage" class="secondary">批准本阶段</button><button id="rejectStage" class="quiet">需要修改</button></div></div>
-                        </section>
-                    </section>
-
-                    <section class="production-panel panel">
-                        <div class="section-head"><div><h2>完整生产与迭代</h2><p>首版可直接生成；之后在这里写明修改要求，创建新的保留版本。</p></div><select id="versions" aria-label="生产版本"></select></div>
-                        <div id="runStatus" role="status"></div><ol id="stages" class="stages"></ol><div id="runError" class="error" hidden></div><div id="runActions" class="button-row"></div>
-                        <label for="instructions">本次制作要求 <span class="optional">首版可留空</span></label><textarea id="instructions" rows="3" maxlength="3000" placeholder="例如：第二关减少危险物，让对白更简短。"></textarea>
-                        <label class="check"><input id="notify" type="checkbox"> 完成后通知我的飞书 <span id="notifyState"></span></label>
-                        <button id="produce" class="primary wide">开始完整生产</button><p class="muted">生成内容先供试玩，人工验收后才可公开发布。</p>
-                    </section>
-                </div>
-            </details>
-
-            <section id="deliverables" class="deliverables panel" hidden>
-                <div class="tabs" role="tablist"><button data-tab="preview" class="active" role="tab" aria-selected="true">试玩游戏</button><button data-tab="files" role="tab" aria-selected="false">文件与下载</button><button data-tab="review" role="tab" aria-selected="false">验收与发布</button></div>
-                <div id="tab-preview" class="tab-content"><div id="previewEmpty" class="empty"><span>▶</span><h3>游戏还在制作中</h3><p>完成后会自动出现在这里，你可以先关闭页面。</p></div><iframe id="preview" title="游戏试玩" sandbox="allow-scripts" allow="autoplay" hidden></iframe><p class="muted">试玩区内点击开始后可操作；支持 WASD / 方向键和触屏。</p></div>
-                <div id="tab-files" class="tab-content" hidden><div class="section-head"><h3>当前版本交付物</h3><a id="download" class="button secondary" hidden>下载完整工程 ZIP</a></div><div class="artifact-grid"><div id="files"></div><div id="filePreview" class="file-preview"><p class="muted">选择文档、图片或音频查看。</p></div></div></div>
-                <div id="tab-review" class="tab-content" hidden><h3>检查记录</h3><div id="qaReport" class="muted">等待生产完成。</div><hr><h3>人工试玩验收</h3><p class="muted">自动检查覆盖结构、可达性和文件；玩法、美术、声音与设备性能需要实际试玩。</p><label class="check"><input type="checkbox" id="played"> 我已试玩当前版本并检查画面、操作与声音</label><label for="reviewNotes">验收记录</label><textarea id="reviewNotes" rows="3" minlength="5" maxlength="2000" placeholder="记录设备、通过的内容或需要修改的问题。"></textarea><div class="button-row"><button id="approve" class="secondary">验收通过</button><button id="reject" class="quiet">需要修改</button></div><p id="reviewState"></p><hr><div class="section-head"><div><h3>公开发布</h3><p class="muted">发布此版本的游戏链接，访客无需登录。后续修改不会覆盖已发布版本。</p></div><button id="publish" class="primary">发布此版本</button></div><div id="release" hidden><a id="releaseLink" target="_blank" rel="noopener">打开已发布游戏 ↗</a><button id="unpublish" class="quiet">撤回发布</button></div></div>
-            </section>
+        <section id="createView" hidden>
+            <div class="eyebrow">GPU WORKSPACE / 自然语言创作</div><h1>说出需求，让 GPU 动手。</h1><p class="lead">AI 整理制作要求，你确认后交给自有 GPU。产物自动保存为独立资源。</p>
+            <div class="creation-layout"><div class="panel"><form id="promptForm">
+                <div class="section-head"><h2>这次想创作什么？</h2><span class="tag">AI 辅助</span></div><label for="kind">资源类型</label><select id="kind"><option value="3d">3D 模型</option><option value="sfx">事件音效</option></select><label for="brief">用自然语言描述需求</label><textarea id="brief" rows="5" minlength="5" maxlength="2000" required placeholder="例如：把参考图里的台灯做成低面数 3D 模型，保留黄铜材质，底座完整，适合网页展示。"></textarea>
+                <div id="referenceFields"><label for="references">参考图 <span>3D 建模必填，第一张用于生成</span></label><input id="references" type="file" accept="image/png,image/jpeg,image/webp" multiple><p class="muted">最多 6 张，单张 10 MB，总计 30 MB；其他图片保留为辅助参考。</p><div id="referencePreview" class="reference-preview"></div><details><summary>模型类型与质量</summary><div class="two-columns"><div><label for="assetKind">模型类型</label><select id="assetKind"><option value="prop">物品 / 道具</option><option value="character">角色</option><option value="environment">场景</option></select></div><div><label for="profile">质量档位</label><select id="profile"><option value="xhs_mobile">移动端标准</option><option value="steam_desktop">桌面高精度</option></select></div></div></details></div>
+                <p id="capabilityHint" class="muted"></p><button id="planButton" class="primary wide" type="submit">让 AI 整理制作计划 →</button><p class="muted">使用「模型设置」中的大模型与 API Key。此步骤只解析指令。</p>
+            </form><section id="planPanel" class="plan-panel" hidden><div class="eyebrow">制作计划 / 等待确认</div><h2 id="planName"></h2><p id="planSummary"></p><div id="planParameters" class="parameter-list"></div><details><summary>查看实际提示词与待验收项</summary><p id="planPrompt" class="preserve"></p><ul id="planReview"></ul></details><p class="muted">确认后提交 GPU；生成结果仍需你预览或试听。</p><button id="executeButton" class="primary wide">确认计划，提交 GPU →</button></section><div id="creationStatus" role="status" class="inline-status"></div></div>
+            <aside class="creation-aside"><div class="panel note-panel"><div class="eyebrow">创作流程</div><ol><li><b>描述需求</b><p>写清主体、风格或声音动作。</p></li><li><b>AI 解析 · 你确认</b><p>查看实际制作参数与提示词。</p></li><li><b>GPU 执行 · 在线预览</b><p>查看进度，完成后旋转模型或试听。</p></li></ol><p class="muted">2D 图像现支持上传与预览，GPU 出图接口尚未接入。</p></div><div class="panel"><div class="section-head"><h2>最近任务</h2><button id="refreshTasks" class="quiet">↻</button></div><div id="tasks" class="task-list"><p class="muted">正在读取任务…</p></div></div></aside></div>
         </section>
     </main>
 </div>
-<div id="toast" role="status" hidden></div>
-<script src="/auth.js"></script><script src="/factory.js"></script>
+<dialog id="uploadDialog"><form id="uploadForm"><div class="section-head"><h2>上传资源</h2><button type="button" data-close="uploadDialog" class="quiet">关闭 ×</button></div><label for="resourceName">资源名称 <span>可选</span></label><input id="resourceName" maxlength="80" placeholder="留空使用文件名"><label for="resourceFile">选择文件</label><input id="resourceFile" type="file" accept=".png,.jpg,.jpeg,.webp,.glb,.wav" required><p class="muted">图片最多 10 MB；GLB / WAV 最多 50 MB。模型须包含全部贴图。</p><p id="uploadStatus" role="status"></p><button class="primary wide" id="uploadSubmit">保存到资源库 →</button></form></dialog>
+<dialog id="settingsDialog"><form id="settingsForm"><div class="section-head"><h2>大模型设置</h2><button type="button" data-close="settingsDialog" class="quiet">关闭 ×</button></div><p class="muted">兼容 OpenAI Chat Completions 的接口，用于解析指令；资产生成由自有 GPU 执行。</p><label for="plannerUrl">完整接口地址</label><input type="url" id="plannerUrl" required placeholder="https://example.com/v1/chat/completions"><label for="plannerModel">模型名称</label><input id="plannerModel" required maxlength="120"><label for="plannerKey">API Key <span id="keyState"></span></label><input id="plannerKey" type="password" autocomplete="new-password" placeholder="留空保留已保存的密钥"><label class="check"><input id="clearKey" type="checkbox">清除个人已保存的密钥</label><p class="muted">按账号保存，密钥只在服务端使用。3D 服务和通知配置位于专业工位。</p><p id="settingsStatus" role="status"></p><button class="primary wide" id="settingsSubmit">保存设置</button></form></dialog>
+<dialog id="previewDialog" class="preview-dialog"><div class="section-head"><div><div class="eyebrow" id="previewType"></div><h2 id="previewName"></h2></div><button data-close="previewDialog" class="quiet">关闭 ×</button></div><div id="previewContent" class="preview-content"></div><p id="previewStatus" role="status"></p><div class="section-head"><span id="previewSource" class="muted"></span><a id="previewDownload" class="button primary" download>下载资源 ↓</a></div><div id="shareControls" hidden><label class="check"><input id="reviewedResource" type="checkbox">我已预览或试听当前资源，同意公开展示</label><button id="shareButton">公开这份资源 ↗</button><p class="muted">公开后访客无需登录即可预览和下载，可随时撤回。</p></div></dialog><div id="toast" role="status" hidden></div>
 </body>
 </html>

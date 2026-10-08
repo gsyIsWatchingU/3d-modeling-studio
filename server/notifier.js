@@ -42,7 +42,7 @@ function buildMessage(job) {
     const succeeded = job.status === 'succeeded';
     if (job.kind === 'game') return [succeeded ? '游戏版本生产完成，待试玩验收' : '游戏版本生产失败', `项目：${job.name}`,
         succeeded ? '策划、剧本、素材、声音和浏览器试玩包已保存。' : `原因：${job.error?.message || '生产失败'}`,
-        job.base_url ? `查看：${job.base_url.replace(/\/$/, '')}/?project=${encodeURIComponent(job.project_id)}` : ''].filter(Boolean).join('\n');
+        job.base_url ? `查看：${job.base_url.replace(/\/$/, '')}/game-factory.html?project=${encodeURIComponent(job.project_id)}` : ''].filter(Boolean).join('\n');
     const resultUrl = job.base_url ? `${job.base_url.replace(/\/$/, '')}/modeling.html?job=${encodeURIComponent(job.id)}` : '';
     return [
         succeeded ? '3D 模型生成完成' : '3D 模型生成失败',

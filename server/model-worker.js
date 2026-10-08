@@ -111,7 +111,7 @@ async function submitJob(job, config) {
         jobDb.update(job.id, { execution_plan: plan });
     }
     // ForgeLoop v2 策略注入：draft/shadow/small_scale/default 按阶段生效；修复任务不注入
-    const policyResult = applyEffectivePolicies(job, plan);
+    const policyResult = job.studio_plan_id ? { plan, applied: [], notes: [] } : applyEffectivePolicies(job, plan);
     plan = policyResult.plan;
     jobDb.update(job.id, {
         execution_plan: plan,
