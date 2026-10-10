@@ -42,6 +42,8 @@ const { MpScheduler } = require('./mp/scheduler');
 const mpStore = require('./mp/store');
 const mpArtifacts = require('./mp/artifacts');
 const mpPaint = require('./mp/paint');
+// 建模资源库：跨机器共享的建模资产清单（GPU/本机扫描、上传、网页展示）
+const { createResourcesRouter } = require('./resources');
 // ForgeLoop v3：启动即初始化六领域自动质量策略（幂等，旧库跳过已存在版本）
 const { ensurePolicies } = require('./auto-policy');
 ensurePolicies();
@@ -414,6 +416,17 @@ app.post('/api/models/:id/generate', (req, res) => res.status(410).json({ succes
 const mpScheduler = new MpScheduler({ store: mpStore, artifacts: mpArtifacts, paint: mpPaint, uploadDir });
 const mpRouter = createMpRouter({ uploadDir });
 app.use('/api/mp', (req, res, next) => { req.mpScheduler = mpScheduler; next(); }, mpRouter);
+
+// 建模资源库：数据存 db.json（服务器），上传文件落 data/resources/，任何机器登录后通过公网 URL 查看
+const resourceDir = path.join(path.dirname(uploadDir), 'resources');
+const mpAssetsDir = path.join(path.dirname(uploadDir), 'mp-assets');
+app.use('/api/resources', requireModelUser, createResourcesRouter({
+    uploadDir,
+    modelDir,
+    resourceDir,
+    mpAssetsDir,
+    assetRoot: process.env.FORGE3D_ASSET_ROOT || null
+}));
 
 app.get('/api/health', (req, res) => {
     res.json({
