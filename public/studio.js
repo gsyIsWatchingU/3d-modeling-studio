@@ -22,7 +22,7 @@ function ensureThumbRenderer() {
 }
 function renderThumbFrame(url, generation) {
     return new Promise(resolve => {
-        if (!ensureThumbRenderer()) return resolve(null);
+        if (!ensureThumbRenderer()) { console.warn('[thumb] THREE/WebGL 不可用', url); return resolve(null); }
         thumbLoader.load(url, gltf => {
             if (generation !== studio.thumbGeneration) { disposeModel(gltf.scene); return resolve(null); }
             const model = gltf.scene;
@@ -31,12 +31,13 @@ function renderThumbFrame(url, generation) {
             const span = Math.max(...box.getSize(new THREE.Vector3()).toArray()) || 1;
             const distance = span / (2 * Math.tan(THREE.MathUtils.degToRad(thumbCamera.fov / 2))) * 1.35;
             thumbCamera.position.copy(center).add(new THREE.Vector3(distance * 0.7, distance * 0.5, distance));
-            thumbCamera.near = span / 1000; thumbCamera.far = span * 1000; thumbCamera.updateProjectionMatrix();
+            thumbCamera.near = span / 1000; thumbCamera.far = span * 1000;
+            thumbCamera.lookAt(center); thumbCamera.updateProjectionMatrix();
             thumbRenderer.render(thumbScene, thumbCamera);
             const dataUrl = thumbRenderer.domElement.toDataURL('image/png');
             thumbScene.remove(model); disposeModel(model);
             resolve(generation === studio.thumbGeneration ? dataUrl : null);
-        }, undefined, () => resolve(null));
+        }, undefined, err => { console.warn('[thumb] GLB 加载失败', url, err?.message || err); resolve(null); });
     });
 }
 function pumpThumbQueue() {
