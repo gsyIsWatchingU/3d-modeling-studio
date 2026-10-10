@@ -487,3 +487,7 @@ iframe { width: 100%; height: 680px; max-height: 80vh; border: var(--pixel-borde
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
 }
+
+/* ==================== 嵌入模式（游戏工厂作为首页「3D 建模工位」的 tab 内容） ==================== */
+.studio-embed .topbar { display: none; }
+.studio-embed .layout { min-height: 100vh; }

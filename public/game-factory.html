@@ -88,6 +88,9 @@
     </main>
 </div>
 <div id="toast" role="status" hidden></div>
-<script src="/auth.js"></script><script src="/factory.js"></script>
+<script>
+    // 作为 3D 建模工位首页的「游戏工厂」tab 嵌入时，隐藏本页顶栏，避免重复导航
+    if (new URLSearchParams(location.search).get('embed') === '1') document.documentElement.classList.add('studio-embed');
+</script><script src="/auth.js"></script><script src="/factory.js"></script>
 </body>
 </html>

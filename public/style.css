@@ -394,3 +394,40 @@ input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--pixel-gr
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+
+/* ==================== 单页 tab 壳（3D 建模工位为首页） ==================== */
+.studio-tabs {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    padding: 0 16px;
+    background: var(--pixel-surface);
+    border-bottom: var(--pixel-border);
+    flex-shrink: 0;
+}
+.studio-tab {
+    padding: 10px 16px 8px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-bottom: none;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--pixel-ink-secondary);
+    border-radius: 0;
+}
+.studio-tab:hover { color: var(--pixel-ink); background: var(--pixel-green-hover); }
+.studio-tab.active {
+    background: var(--pixel-page);
+    border-color: var(--pixel-ink);
+    color: var(--pixel-ink);
+    transform: none;
+}
+.studio-pane { flex: 1; min-height: 0; display: flex; }
+.studio-pane-embed { background: var(--pixel-page); }
+.studio-frame { width: 100%; height: 100%; border: 0; display: block; background: var(--pixel-page); }
+/* 嵌入模式（作为首页 tab 的内容时）隐藏子页面自己的顶栏，避免重复导航 */
+.studio-embed .app-bar { display: none; }
+@media (max-width: 700px) {
+    .studio-tabs { padding: 0 8px; }
+    .studio-tab { padding: 8px 10px 6px; font-size: 11px; }
+}

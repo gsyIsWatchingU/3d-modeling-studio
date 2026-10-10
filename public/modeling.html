@@ -20,16 +20,22 @@
                 <span class="app-bar-subtitle">上传参考图，后台自动生成，完成后通知你</span>
             </div>
             <div class="header-actions">
-                <a class="btn compact" href="/">资源库</a>
                 <span class="service-badge" id="serviceBadge">正在检查服务</span>
                 <span class="user-chip" id="currentUser" hidden></span>
                 <button class="btn compact" id="logoutBtn" type="button" hidden>退出</button>
                 <button class="btn compact" id="openSettingsBtn" type="button">设置</button>
                 <button class="btn compact" id="openProductionBtn" type="button">制作规范</button>
-                                <a class="btn compact" href="/evolution.html">模型进化</a>
             </div>
         </header>
 
+        <nav class="studio-tabs" role="tablist" aria-label="功能切换">
+            <button class="studio-tab active" type="button" role="tab" aria-selected="true" data-studio-tab="modeling">3D 建模工位</button>
+            <button class="studio-tab" type="button" role="tab" aria-selected="false" data-studio-tab="studio">资源工作室</button>
+            <button class="studio-tab" type="button" role="tab" aria-selected="false" data-studio-tab="factory">游戏工厂</button>
+            <button class="studio-tab" type="button" role="tab" aria-selected="false" data-studio-tab="evolution">模型进化</button>
+        </nav>
+
+        <div class="studio-pane" id="pane-modeling">
         <div class="app-main">
             <aside class="workflow" aria-label="建模流程">
                 <div class="flow-intro">
@@ -155,6 +161,17 @@
                 </div>
             </aside>
         </div>
+        </div>
+
+        <div class="studio-pane studio-pane-embed" id="pane-studio" hidden>
+            <iframe class="studio-frame" id="studioFrame" title="资源工作室" loading="lazy"></iframe>
+        </div>
+        <div class="studio-pane studio-pane-embed" id="pane-factory" hidden>
+            <iframe class="studio-frame" id="factoryFrame" title="游戏工厂" loading="lazy"></iframe>
+        </div>
+        <div class="studio-pane studio-pane-embed" id="pane-evolution" hidden>
+            <iframe class="studio-frame" id="evolutionFrame" title="模型进化" loading="lazy"></iframe>
+        </div>
     </div>
 
     <dialog class="settings-dialog" id="settingsDialog">
@@ -277,6 +294,52 @@
         </div>
     </dialog>
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+    <script>
+    // 单页壳：3D 建模工位为首页，资源工作室 / 游戏工厂 / 模型进化在本页内切换，不跳转页面。
+    (function () {
+        const TABS = ['modeling', 'studio', 'factory', 'evolution'];
+        const FRAME_SRC = { studio: '/index.html?embed=1', factory: '/game-factory.html?embed=1', evolution: '/evolution.html?embed=1' };
+        let current = 'modeling';
+        function activate(name) {
+            if (!TABS.includes(name)) name = 'modeling';
+            if (name !== current) {
+                const frame = document.getElementById(name + 'Frame');
+                if (frame && !frame.getAttribute('src')) frame.setAttribute('src', FRAME_SRC[name]);
+            }
+            TABS.forEach(tab => {
+                const button = document.querySelector('.studio-tab[data-studio-tab="' + tab + '"]');
+                const pane = document.getElementById('pane-' + tab);
+                const active = tab === name;
+                button.classList.toggle('active', active);
+                button.setAttribute('aria-selected', active ? 'true' : 'false');
+                pane.hidden = !active;
+            });
+            current = name;
+        }
+        document.querySelectorAll('.studio-tab').forEach(button => {
+            button.addEventListener('click', () => activate(button.dataset.studioTab));
+        });
+        // 供嵌入子页面（资源工作室 / 游戏工厂 / 模型进化）调用：切回建模工位，可选带制作计划。
+        window.switchStudioTab = function (name, planId) {
+            activate(name || 'modeling');
+            if (planId) {
+                const url = new URL(location.href);
+                if (url.searchParams.get('plan') !== planId) {
+                    url.searchParams.set('plan', planId);
+                    history.replaceState(null, '', url.pathname + url.search);
+                }
+                if (typeof loadProductionPlans === 'function') loadProductionPlans(planId).catch(() => {});
+                if (typeof importTransferredReferences === 'function') importTransferredReferences().catch(() => {});
+            }
+            return true;
+        };
+        // 旧入口兼容：/modeling.html?settings=1 直接打开设置
+        if (new URLSearchParams(location.search).get('settings') === '1') {
+            const openBtn = document.getElementById('openSettingsBtn');
+            if (openBtn) setTimeout(() => openBtn.click(), 300);
+        }
+    })();
+    </script>
     <script src="auth.js"></script>
     <script src="main.js"></script>
     <script src="production.js"></script>
