@@ -122,6 +122,16 @@ document.querySelectorAll('[data-view]').forEach(button => button.onclick = () =
 $('startCreate').onclick = () => view('create');
 document.querySelectorAll('[data-kind]').forEach(button => button.onclick = () => { studio.filter = button.dataset.kind; document.querySelectorAll('[data-kind]').forEach(item => { const active = item === button; item.classList.toggle('active', active); item.setAttribute('aria-pressed', String(active)); }); renderLibrary(); });
 $('search').oninput = renderLibrary; $('refresh').onclick = () => loadLibrary(); $('refreshTasks').onclick = loadTasks;
+$('scanButton').onclick = async () => {
+    if (studio.guest) { location.href = '/login.html'; return; }
+    $('scanButton').disabled = true;
+    try {
+        const result = await request('/resources/scan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        await loadLibrary();
+        toast(`扫描完成：新增 ${result.totals.added} 份，共 ${result.totals.total} 份可用`);
+    } catch (error) { toast(error.message); }
+    finally { $('scanButton').disabled = false; }
+};
 for (const id of ['uploadButton', 'emptyUpload']) $(id).onclick = () => { if (studio.guest) { location.href = '/login.html'; return; } $('uploadStatus').textContent = ''; $('uploadDialog').showModal(); };
 document.querySelectorAll('[data-close]').forEach(button => button.onclick = () => $(button.dataset.close).close());
 $('previewDialog').addEventListener('close', resetPreview);

@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const sharp = require('sharp');
-const { studioDb, modelDb, jobDb, factoryDb, dbPath, modelDir, uploadDir } = require('./db');
+const { studioDb, modelDb, jobDb, factoryDb, dbPath, modelDir, uploadDir, resourceDb } = require('./db');
 const { requireUser, requireModelUser } = require('./auth');
 const { detectImageType, validateGlbBuffer } = require('./utils');
 const { getProviderConfig } = require('./model-worker');
@@ -40,6 +40,30 @@ function resources(ownerId) {
                 result.push({ id: `${project.id}-${run.id}-${path.basename(artifact.path)}`, name: `${project.name} / 预览图`, kind: '2d', file: path.join(stageRunDir(project, run), artifact.path), source: '上传图片', review: run.review?.status || 'pending', created_at: run.created_at, bytes: artifact.bytes });
             }
         }
+    }
+    // 共享资产库（GPU/本机扫描入库、云上传）：跨账号可见的同一份资产清单
+    const resourceDir = path.join(path.dirname(dbPath), 'resources');
+    const kindMap = { model: '3d', reference: '2d', image: '2d', texture: '2d', audio: 'sfx', archive: '2d', other: '2d' };
+    for (const r of resourceDb.list()) {
+        const kind = kindMap[r.kind];
+        if (!kind) continue;
+        let file;
+        if (r.source === 'upload' && r.file_path) file = path.join(resourceDir, path.basename(r.file_path));
+        else if (r.file_path && path.isAbsolute(r.file_path)) file = r.file_path;
+        else continue;
+        if (!fs.existsSync(file)) continue;
+        result.push({
+            id: `asset-${r.id}`,
+            name: r.name || path.basename(file),
+            kind,
+            file,
+            source: r.source === 'gpu' ? 'GPU · 共享资产' : r.source === 'upload' ? '云上传' : '本机登记',
+            review: 'approved',
+            created_at: r.created_at,
+            bytes: r.size,
+            sha256: r.sha256,
+            note: r.note || undefined
+        });
     }
     return result.filter(item => fs.existsSync(item.file)).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 }
