@@ -78,6 +78,8 @@ app.use('/api/contracts', createContractRouter());
 // 修复任务通过 wake 唤醒建模 worker；modelWorkerWake 在 worker 启动后赋值。
 app.use('/api/learning', createLearningRouter({ wake: () => { if (modelWorkerWake) modelWorkerWake(); } }));
 app.use('/vendor/three', express.static(path.join(__dirname, '..', 'node_modules', 'three')));
+// 3D 建模工位为首页；游戏工厂 / 模型进化作为同页 tab（/index.html、/evolution.html 仍可直接访问）
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'modeling.html')));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use('/models', requireModelUser, (req, res, next) => {
     const model = modelDb.list().find(item => item.model_file === '/models' + req.path);

@@ -331,6 +331,12 @@ $('unpublish').onclick = () => act(async () => { await api(`/projects/${active.i
 $('modeling').onclick = () => act(async () => {
     const result = await api(`/projects/${active.id}/model-plan`, { method: 'POST', body: '{}' });
     if (result.preview_files?.length) sessionStorage.setItem('modeling-reference-transfer', JSON.stringify({ plan_id: result.production_plan_id, project_name: active.name, images: result.preview_files }));
+    // 嵌入在 3D 建模工位首页 tab 内时，切回父页面建模工位并带上制作计划；独立页面保持原跳转。
+    if (document.documentElement.classList.contains('studio-embed') && window.parent?.switchStudioTab) {
+        const planId = new URL(result.url, location.href).searchParams.get('plan') || '';
+        window.parent.switchStudioTab('modeling', planId);
+        return;
+    }
     location.href = result.url;
 });
 $('openModeling').onclick = $('modeling').onclick;
