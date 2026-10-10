@@ -3,6 +3,76 @@ const studio = { resources: [], filter: 'all', plan: null, config: null, jobs: [
 const labels = { '2d': '2D 图像', '3d': '3D 模型', sfx: '事件音效' };
 const statusLabels = { queued: '排队中', retry_wait: '等待重试', running: '生成中', generating: '生成中', downloading: '保存中', validating: '校验中', succeeded: '已完成', failed: '失败' };
 let toastTimer, previewCleanup = () => {}, previewRevision = 0;
+// ---- 3D 卡片缩略图：共享离屏 WebGL renderer + IntersectionObserver 懒渲染 ----
+const thumbQueue = { running: false, pending: [] };
+let thumbRenderer = null, thumbLoader = null, thumbScene = null, thumbCamera = null, thumbObserver = null;
+function ensureThumbRenderer() {
+    if (thumbRenderer) return thumbRenderer;
+    if (!window.THREE) return null;
+    thumbRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+    thumbRenderer.setSize(256, 256, false);
+    thumbRenderer.outputEncoding = THREE.sRGBEncoding;
+    thumbScene = new THREE.Scene();
+    thumbScene.add(new THREE.HemisphereLight(0xffffff, 0x62755f, 1.8));
+    const key = new THREE.DirectionalLight(0xffffff, 1.6); key.position.set(3, 5, 4); thumbScene.add(key);
+    const fill = new THREE.DirectionalLight(0xffffff, 0.5); fill.position.set(-3, -2, -3); thumbScene.add(fill);
+    thumbCamera = new THREE.PerspectiveCamera(35, 1, 0.001, 10000);
+    thumbLoader = new THREE.GLTFLoader();
+    return thumbRenderer;
+}
+function renderThumbFrame(url, generation) {
+    return new Promise(resolve => {
+        if (!ensureThumbRenderer()) return resolve(null);
+        thumbLoader.load(url, gltf => {
+            if (generation !== studio.thumbGeneration) { disposeModel(gltf.scene); return resolve(null); }
+            const model = gltf.scene;
+            thumbScene.add(model); model.updateMatrixWorld(true);
+            const box = new THREE.Box3().setFromObject(model), center = box.getCenter(new THREE.Vector3());
+            const span = Math.max(...box.getSize(new THREE.Vector3()).toArray()) || 1;
+            const distance = span / (2 * Math.tan(THREE.MathUtils.degToRad(thumbCamera.fov / 2))) * 1.35;
+            thumbCamera.position.copy(center).add(new THREE.Vector3(distance * 0.7, distance * 0.5, distance));
+            thumbCamera.near = span / 1000; thumbCamera.far = span * 1000; thumbCamera.updateProjectionMatrix();
+            thumbRenderer.render(thumbScene, thumbCamera);
+            const dataUrl = thumbRenderer.domElement.toDataURL('image/png');
+            thumbScene.remove(model); disposeModel(model);
+            resolve(generation === studio.thumbGeneration ? dataUrl : null);
+        }, undefined, () => resolve(null));
+    });
+}
+function pumpThumbQueue() {
+    if (thumbQueue.running || !thumbQueue.pending.length) return;
+    thumbQueue.running = true;
+    const next = () => {
+        const job = thumbQueue.pending.shift();
+        if (!job) { thumbQueue.running = false; return; }
+        renderThumbFrame(job.url, job.generation).then(dataUrl => {
+            if (dataUrl && job.generation === studio.thumbGeneration && job.visual.isConnected) {
+                const placeholder = job.visual.querySelector('.model-symbol');
+                const img = element('img', null, 'thumb-img'); img.src = dataUrl; img.alt = job.name; img.loading = 'lazy';
+                if (placeholder) placeholder.replaceWith(img); else job.visual.append(img);
+            }
+            next();
+        });
+    };
+    next();
+}
+function observeThumb(visual, resource, generation) {
+    if (!window.IntersectionObserver || !window.THREE) return;
+    if (!thumbObserver) {
+        thumbObserver = new IntersectionObserver(entries => {
+            for (const entry of entries) {
+                if (!entry.isIntersecting) continue;
+                const v = entry.target; thumbObserver.unobserve(v);
+                if (v._thumbQueued || v._thumbGeneration !== studio.thumbGeneration) continue;
+                v._thumbQueued = true;
+                thumbQueue.pending.push({ visual: v, url: v._thumbUrl, name: v._thumbName, generation: v._thumbGeneration });
+                pumpThumbQueue();
+            }
+        }, { rootMargin: '300px 0px' });
+    }
+    visual._thumbUrl = resource.url; visual._thumbName = resource.name; visual._thumbGeneration = generation;
+    thumbObserver.observe(visual);
+}
 
 async function request(path, options = {}) {
     const response = await fetch(`/api${path}`, options);
@@ -25,6 +95,7 @@ function view(name) {
 }
 function formatBytes(bytes) { return bytes ? bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : bytes >= 1024 ? `${Math.round(bytes / 1024)} KB` : `${bytes} B` : ''; }
 function renderLibrary() {
+    studio.thumbGeneration = (studio.thumbGeneration || 0) + 1;
     for (const [kind, id] of [['2d', 'imageCount'], ['3d', 'modelCount'], ['sfx', 'audioCount']]) $(id).textContent = studio.resources.filter(item => item.kind === kind).length;
     $('totalCount').textContent = studio.resources.length;
     const query = $('search').value.trim().toLowerCase();
@@ -40,7 +111,10 @@ function renderLibrary() {
         if (resource.kind === '2d' || resource.thumbnail) {
             const img = element('img'); img.src = resource.kind === '2d' ? resource.url : resource.thumbnail; img.alt = resource.name; img.loading = 'lazy';
             img.addEventListener('error', () => { img.remove(); visual.append(element('span', '预览图加载失败', 'muted')); }); visual.append(img);
-        } else visual.append(element('span', resource.kind === '3d' ? '◇' : '♪', resource.kind === '3d' ? 'model-symbol' : 'audio-symbol'));
+        } else {
+            visual.append(element('span', resource.kind === '3d' ? '◇' : '♪', resource.kind === '3d' ? 'model-symbol' : 'audio-symbol'));
+            if (resource.kind === '3d') observeThumb(visual, resource, studio.thumbGeneration);
+        }
         if (resource.kind === 'sfx') { const audio = element('audio'); audio.controls = true; audio.preload = 'none'; audio.src = resource.url; audio.setAttribute('aria-label', `试听 ${resource.name}`); visual.append(audio); }
         const body = element('div', null, 'resource-body'); body.append(element('h3', resource.name));
         body.append(element('div', [resource.source, formatBytes(resource.bytes), resource.review === 'approved' ? '已审核' : '待审核'].filter(Boolean).join(' · '), 'resource-meta'));
