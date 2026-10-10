@@ -153,7 +153,18 @@ $('uploadForm').onsubmit = async event => {
     catch (error) { $('uploadStatus').textContent = error.message; }
     finally { $('uploadSubmit').disabled = false; }
 };
+function closeAccountMenu() { $('accountDropdown').hidden = true; $('accountBtn').setAttribute('aria-expanded', 'false'); }
+$('accountBtn').onclick = (event) => {
+    event.stopPropagation();
+    const open = $('accountDropdown').hidden;
+    $('accountDropdown').hidden = !open;
+    $('accountBtn').setAttribute('aria-expanded', String(open));
+};
+$('accountDropdown').addEventListener('click', event => event.stopPropagation());
+document.addEventListener('click', event => { if (!$('accountMenu').contains(event.target)) closeAccountMenu(); });
+$('notifyBtn').onclick = () => { location.href = '/modeling.html?settings=1'; };
 $('settingsButton').onclick = async () => {
+    closeAccountMenu();
     try { await loadConfig(); $('plannerUrl').value = studio.config.url; $('plannerModel').value = studio.config.model; $('plannerKey').value = ''; $('clearKey').checked = false; $('keyState').textContent = studio.config.api_key_configured ? '已配置' : '未配置'; $('settingsStatus').textContent = ''; $('settingsDialog').showModal(); }
     catch (error) { toast(error.message); }
 };
@@ -204,7 +215,7 @@ async function init() {
     if (legacyProject) { location.replace(`/game-factory.html?project=${encodeURIComponent(legacyProject)}`); return; }
     const user = await AUTH_API.me();
     if (!user) {
-        studio.guest = true; $('settingsButton').hidden = true; $('logout').textContent = '登录'; $('logout').onclick = () => { location.href = '/login.html'; };
+        studio.guest = true; $('accountMenu').hidden = true; $('notifyBtn').hidden = true; $('logout').textContent = '登录'; $('logout').onclick = () => { location.href = '/login.html'; };
         $('libraryView').querySelector('h1').textContent = '创作资源，在线预览。'; $('libraryView').querySelector('.lead').textContent = '浏览已公开的 2D 图像、3D 模型与事件音效。';
         $('emptyLibrary').querySelector('p').textContent = '尚无公开资源。登录后可管理自己的资源和 GPU 创作任务。'; $('emptyUpload').textContent = '登录工作室 →';
         view('library'); await loadLibrary(); return;
