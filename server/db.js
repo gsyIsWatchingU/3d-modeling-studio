@@ -29,6 +29,8 @@ ensureDir(modelDir);
 function initialData() {
     return {
         models: [],
+        // 建模资源库：跨机器共享的建模资产清单（GPU 服务器扫描 / 本机登记 / 上传到服务器）
+        resources: [],
         jobs: [],
         skills: [BUILTIN_SKILL],
         notifications: [],
@@ -76,6 +78,8 @@ function normalizeDb(raw) {
     const defaults = initialData();
     const db = raw && typeof raw === 'object' ? raw : {};
     db.models = Array.isArray(db.models) ? db.models : [];
+    // 建模资源库：幂等回填（旧库自动补空集合）
+    db.resources = Array.isArray(db.resources) ? db.resources : [];
     db.jobs = Array.isArray(db.jobs) ? db.jobs : [];
     db.skills = Array.isArray(db.skills) ? db.skills : [];
     db.notifications = Array.isArray(db.notifications) ? db.notifications : [];
@@ -1118,6 +1122,124 @@ const contractDb = {
     }
 };
 
+// ---------- 建模资源库（跨机器共享资产清单） ----------
+// source: 'gpu'（GPU 服务器目录扫描/登记）| 'local'（本机目录登记，仅清单）| 'upload'（已上传到服务器，跨机器可访问）
+const resourceDb = {
+    create(data) {
+        return mutate(db => {
+            const now = new Date().toISOString();
+            const resource = {
+                id: db.nextId++,
+                name: String(data.name || '未命名资源').trim().slice(0, 120) || '未命名资源',
+                kind: data.kind || 'other',
+                source: data.source || 'local',
+                ext: data.ext || null,
+                size: data.size ?? null,
+                sha256: data.sha256 || null,
+                file_path: data.file_path || null,
+                url: data.url || null,
+                tags: Array.isArray(data.tags) ? [...new Set(data.tags.map(String).filter(Boolean))].slice(0, 20) : [],
+                note: String(data.note || '').trim().slice(0, 1000),
+                origin: data.origin && typeof data.origin === 'object'
+                    ? { machine: String(data.origin.machine || '').trim().slice(0, 120) || null, dir: String(data.origin.dir || '').trim().slice(0, 500) || null }
+                    : null,
+                job_id: data.job_id || null,
+                mp_id: data.mp_id || null,
+                missing: false,
+                created_at: now,
+                updated_at: now
+            };
+            db.resources.push(resource);
+            return clone(resource);
+        });
+    },
+    update(id, data) {
+        return mutate(db => {
+            const resource = db.resources.find(item => item.id === Number(id));
+            if (!resource) return null;
+            const patch = {};
+            if (data.name !== undefined) patch.name = String(data.name).trim().slice(0, 120) || '未命名资源';
+            if (data.kind !== undefined) patch.kind = data.kind;
+            if (data.tags !== undefined) patch.tags = [...new Set(data.tags.map(String).filter(Boolean))].slice(0, 20);
+            if (data.note !== undefined) patch.note = String(data.note).trim().slice(0, 1000);
+            if (data.job_id !== undefined) patch.job_id = data.job_id || null;
+            if (data.mp_id !== undefined) patch.mp_id = data.mp_id || null;
+            if (data.url !== undefined) patch.url = data.url ? String(data.url).trim().slice(0, 500) : null;
+            Object.assign(resource, patch, { updated_at: new Date().toISOString() });
+            return clone(resource);
+        });
+    },
+    findById(id) {
+        return clone(readDb().resources.find(item => item.id === Number(id)) || null);
+    },
+    list() {
+        return clone(readDb().resources.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at)));
+    },
+    delete(id) {
+        return mutate(db => {
+            const before = db.resources.length;
+            db.resources = db.resources.filter(item => item.id !== Number(id));
+            return before !== db.resources.length;
+        });
+    },
+    // 扫描入库幂等键：(source, file_path)；命中则只刷新 missing 标记
+    upsertByPath(source, filePath, data) {
+        return mutate(db => {
+            const existing = db.resources.find(item => item.source === source && item.file_path === filePath);
+            const now = new Date().toISOString();
+            if (existing) {
+                existing.missing = false;
+                existing.updated_at = now;
+                if (data.size !== undefined) existing.size = data.size;
+                if (data.sha256 !== undefined && data.sha256) existing.sha256 = data.sha256;
+                return { resource: clone(existing), created: false };
+            }
+            const resource = {
+                id: db.nextId++,
+                name: String(data.name || '未命名资源').trim().slice(0, 120) || '未命名资源',
+                kind: data.kind || 'other',
+                source,
+                ext: data.ext || null,
+                size: data.size ?? null,
+                sha256: data.sha256 || null,
+                file_path: filePath,
+                url: data.url || null,
+                tags: Array.isArray(data.tags) ? [...new Set(data.tags.map(String).filter(Boolean))].slice(0, 20) : [],
+                note: String(data.note || '').trim().slice(0, 1000),
+                origin: data.origin && typeof data.origin === 'object'
+                    ? { machine: String(data.origin.machine || '').trim().slice(0, 120) || null, dir: String(data.origin.dir || '').trim().slice(0, 500) || null }
+                    : null,
+                job_id: data.job_id || null,
+                mp_id: data.mp_id || null,
+                missing: false,
+                created_at: now,
+                updated_at: now
+            };
+            db.resources.push(resource);
+            return { resource: clone(resource), created: true };
+        });
+    },
+    // 扫描后核对：source 下已登记但文件已不存在的资源标记 missing（upload 记录不参与核对）
+    markMissing(source, existingPaths) {
+        return mutate(db => {
+            let count = 0;
+            for (const resource of db.resources) {
+                if (resource.source !== source || resource.url) continue;
+                const stillExists = resource.file_path && existingPaths.has(resource.file_path);
+                if (!stillExists && !resource.missing) {
+                    resource.missing = true;
+                    resource.updated_at = new Date().toISOString();
+                    count += 1;
+                } else if (stillExists && resource.missing) {
+                    resource.missing = false;
+                    resource.updated_at = new Date().toISOString();
+                }
+            }
+            return count;
+        });
+    }
+};
+
 function getStats() {
     const db = readDb();
     const jobCounts = {};
@@ -1141,6 +1263,7 @@ function getStats() {
 module.exports = {
     studioDb,
     modelDb,
+    resourceDb,
     skillDb,
     settingsDb,
     jobDb,

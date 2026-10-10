@@ -26,6 +26,7 @@
                 <button class="btn compact" id="logoutBtn" type="button" hidden>退出</button>
                 <button class="btn compact" id="openSettingsBtn" type="button">设置</button>
                 <button class="btn compact" id="openProductionBtn" type="button">制作规范</button>
+                <button class="btn compact" id="openLibraryBtn" type="button">资产库</button>
                 <a class="btn compact" href="/evolution.html">模型进化</a>
             </div>
         </header>
@@ -276,9 +277,89 @@
             </section>
         </div>
     </dialog>
+    <dialog class="settings-dialog" id="libraryDialog">
+        <div class="dialog-head">
+            <div>
+                <span class="eyebrow">GPU / 本机 / 已上传 · 数据存服务器，跨机器同步</span>
+                <h2>建模资产库</h2>
+            </div>
+            <button class="btn compact" id="closeLibraryBtn" type="button">关闭</button>
+        </div>
+        <div class="library-toolbar">
+            <input type="search" id="resourceSearch" placeholder="搜索名称 / 标签 / 备注">
+            <select id="resourceKindFilter" aria-label="类型筛选"><option value="">全部类型</option></select>
+            <select id="resourceSourceFilter" aria-label="来源筛选"><option value="">全部来源</option></select>
+            <span class="library-count" id="resourceCount">—</span>
+            <span class="library-actions">
+                <button class="btn compact" id="scanResourcesBtn" type="button">扫描服务器目录</button>
+                <button class="btn compact primary" id="registerResourceBtn" type="button">＋ 登记 / 上传</button>
+            </span>
+        </div>
+        <div class="library-grid" id="resourceGrid" aria-live="polite">
+            <div class="empty-list">加载中…</div>
+        </div>
+        <p class="library-hint">GPU 服务器与上传的资源文件存于服务器，任何机器登录后都可查看、预览与下载；仅登记路径的“本机”资源不包含文件。</p>
+    </dialog>
+
+    <dialog class="settings-dialog" id="registerDialog">
+        <div class="dialog-head">
+            <div>
+                <span class="eyebrow" id="registerDialogKicker">登记资源</span>
+                <h2 id="registerDialogTitle">登记 / 上传建模资源</h2>
+            </div>
+            <button class="btn compact" id="closeRegisterBtn" type="button">关闭</button>
+        </div>
+        <div class="settings-content">
+            <section class="settings-section">
+                <div class="form-group">
+                    <label for="resourceNameInput">资源名称 <span>可选，留空按文件名</span></label>
+                    <input type="text" id="resourceNameInput" maxlength="120" placeholder="例如：主角战车 exported">
+                </div>
+                <div class="two-columns">
+                    <div class="form-group">
+                        <label for="resourceKindInput">类型</label>
+                        <select id="resourceKindInput"></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="resourceSourceInput">来源</label>
+                        <select id="resourceSourceInput">
+                            <option value="upload">上传到服务器（跨机器可访问）</option>
+                            <option value="gpu">GPU 服务器（填服务器路径）</option>
+                            <option value="local">本机（仅登记路径）</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group" id="resourceFileGroup">
+                    <label for="resourceFileInput">资源文件 <span>GLB/OBJ/FBX/BLEND、图片、音频、压缩包，≤ 50 MB</span></label>
+                    <input type="file" id="resourceFileInput">
+                </div>
+                <div class="form-group" id="resourcePathGroup" hidden>
+                    <label for="resourcePathInput">文件路径 <span>该机器上的绝对路径（GPU=服务器路径 / 本机=当前电脑路径）</span></label>
+                    <input type="text" id="resourcePathInput" maxlength="500" placeholder="/workspace/projects/3d-modeling-studio/data/models/model-J000001-*.glb">
+                    <div class="form-group" style="margin-top:10px">
+                        <label for="resourceMachineInput">机器名 <span>可选，便于识别资源在哪台机器</span></label>
+                        <input type="text" id="resourceMachineInput" maxlength="120" placeholder="例如：mygpu / 家里台式机">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="resourceTagsInput">标签 <span>逗号分隔</span></label>
+                    <input type="text" id="resourceTagsInput" maxlength="300" placeholder="例如：角色, 正式导出, v1">
+                </div>
+                <div class="form-group">
+                    <label for="resourceNoteInput">备注 <span>可选</span></label>
+                    <textarea id="resourceNoteInput" rows="2" maxlength="1000" placeholder="记录用途、规格或来源说明。"></textarea>
+                </div>
+                <div class="button-row">
+                    <button class="btn primary" id="saveResourceBtn" type="button">保存</button>
+                    <button class="btn compact" id="cancelRegisterBtn" type="button">取消</button>
+                </div>
+            </section>
+        </div>
+    </dialog>
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
     <script src="auth.js"></script>
     <script src="main.js"></script>
     <script src="production.js"></script>
+    <script src="resource.js"></script>
 </body>
 </html>

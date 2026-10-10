@@ -39,6 +39,8 @@ const { startFactoryWorker } = require('./factory-worker');
 const { startStageWorker } = require('./stage-worker');
 const { createContractRouter } = require('./production-contract');
 const { backfillTerminalHistory } = require('./retrospective-worker');
+// 建模资源库：跨机器共享的建模资产清单（GPU/本机扫描、上传、网页展示）
+const { createResourcesRouter } = require('./resources');
 // ForgeLoop v3：启动即初始化六领域自动质量策略（幂等，旧库跳过已存在版本）
 const { ensurePolicies } = require('./auto-policy');
 ensurePolicies();
@@ -416,6 +418,17 @@ app.delete('/api/models/:id', requireUser, (req, res) => {
 
 app.post('/api/models/upload', (req, res) => res.status(410).json({ success: false, error: '请使用新的多图异步任务接口 /api/jobs' }));
 app.post('/api/models/:id/generate', (req, res) => res.status(410).json({ success: false, error: '请使用新的多图异步任务接口 /api/jobs' }));
+
+// 建模资产库：数据存 db.json（服务器），上传文件落 data/resources/，任何机器登录后通过公网 URL 查看
+const resourceDir = path.join(path.dirname(uploadDir), 'resources');
+const mpAssetsDir = path.join(path.dirname(uploadDir), 'mp-assets');
+app.use('/api/resources', requireModelUser, createResourcesRouter({
+    uploadDir,
+    modelDir,
+    resourceDir,
+    mpAssetsDir,
+    assetRoot: process.env.FORGE3D_ASSET_ROOT || null
+}));
 
 app.get('/api/health', (req, res) => {
     res.json({
