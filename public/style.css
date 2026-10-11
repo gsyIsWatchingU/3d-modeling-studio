@@ -42,6 +42,7 @@ button, summary, select, input[type="checkbox"] { cursor: pointer; }
     background: var(--pixel-surface);
     border-bottom: var(--pixel-border);
     flex-shrink: 0;
+    position: relative;
 }
 .brand-block { display: flex; align-items: baseline; gap: 14px; min-width: 0; }
 .app-bar-icon { width: 26px; height: 26px; align-self: center; border-radius: 5px; object-fit: cover; flex: 0 0 auto; }
@@ -456,19 +457,18 @@ input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--pixel-gr
 
 /* ==================== 单页 tab 壳（3D 建模工位为首页） ==================== */
 .studio-tabs {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     gap: 2px;
-    padding: 0 16px;
-    background: var(--pixel-surface);
-    border-bottom: var(--pixel-border);
     flex-shrink: 0;
 }
 .studio-tab {
-    padding: 10px 16px 8px;
+    padding: 7px 16px;
     background: transparent;
     border: 1px solid transparent;
-    border-bottom: none;
     font-size: 12px;
     font-weight: 700;
     color: var(--pixel-ink-secondary);
@@ -487,6 +487,5 @@ input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--pixel-gr
 /* 嵌入模式（作为首页 tab 的内容时）隐藏子页面自己的顶栏，避免重复导航 */
 .studio-embed .app-bar { display: none; }
 @media (max-width: 700px) {
-    .studio-tabs { padding: 0 8px; }
-    .studio-tab { padding: 8px 10px 6px; font-size: 11px; }
+    .studio-tab { padding: 6px 10px; font-size: 11px; }
 }

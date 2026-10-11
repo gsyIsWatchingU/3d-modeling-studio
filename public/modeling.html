@@ -19,8 +19,12 @@
                 <span class="app-bar-title">3D 建模工作室_</span>
                 <span class="app-bar-subtitle">上传参考图，后台自动生成，完成后通知你</span>
             </div>
+            <nav class="studio-tabs" role="tablist" aria-label="功能切换">
+                <button class="studio-tab active" type="button" role="tab" aria-selected="true" data-studio-tab="modeling">3D 建模工位</button>
+                <button class="studio-tab" type="button" role="tab" aria-selected="false" data-studio-tab="factory">游戏工厂</button>
+                <button class="studio-tab" type="button" role="tab" aria-selected="false" data-studio-tab="evolution">模型进化</button>
+            </nav>
             <div class="header-actions">
-                <span class="service-badge" id="serviceBadge">正在检查服务</span>
                 <span class="user-chip" id="currentUser" hidden></span>
                 <button class="btn compact" id="logoutBtn" type="button" hidden>退出</button>
                 <button class="btn compact" id="openSettingsBtn" type="button">设置</button>
@@ -28,12 +32,6 @@
                 <button class="btn compact" id="openLibraryBtn" type="button">资产库</button>
             </div>
         </header>
-
-        <nav class="studio-tabs" role="tablist" aria-label="功能切换">
-            <button class="studio-tab active" type="button" role="tab" aria-selected="true" data-studio-tab="modeling">3D 建模工位</button>
-            <button class="studio-tab" type="button" role="tab" aria-selected="false" data-studio-tab="factory">游戏工厂</button>
-            <button class="studio-tab" type="button" role="tab" aria-selected="false" data-studio-tab="evolution">模型进化</button>
-        </nav>
 
         <div class="studio-pane" id="pane-modeling">
         <div class="app-main">
