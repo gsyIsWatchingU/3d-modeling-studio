@@ -238,8 +238,10 @@ function applyBootstrap(data) {
     const provider = data.provider;
     const badge = document.getElementById('serviceBadge');
     const notice = document.getElementById('serviceNotice');
-    badge.textContent = provider.configured ? '建模服务正常' : '建模服务未配置';
-    badge.className = `service-badge ${provider.configured ? 'ready' : 'error'}`;
+    if (badge) {
+        badge.textContent = provider.configured ? '建模服务正常' : '建模服务未配置';
+        badge.className = `service-badge ${provider.configured ? 'ready' : 'error'}`;
+    }
     notice.textContent = provider.configured ? '建模服务已就绪，提交后会在后台运行。' : '建模服务尚未配置，请打开右上角“设置”。';
     notice.classList.toggle('ready', provider.configured);
     fillSelect(document.getElementById('assetKindSelect'), data.asset_kinds, document.getElementById('assetKindSelect').value || 'prop');
