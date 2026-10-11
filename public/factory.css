@@ -94,10 +94,22 @@ input:-webkit-autofill:focus {
 .brand-text { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
 .brand-text b { font-size: 17px; font-weight: 800; }
 .brand-text span { font-size: 10px; color: var(--pixel-ink-secondary); letter-spacing: 2px; display: block; line-height: 1; }
-.topbar nav { display: flex; align-items: center; gap: 14px; font-size: 12px; }
+.topbar nav { display: flex; align-items: center; gap: 8px; font-size: 12px; }
 .topbar nav a { color: var(--pixel-green-strong); font-weight: 700; }
 .topbar button { min-height: 34px; padding: 4px 10px; font-size: 11px; }
 #account { color: var(--pixel-ink-secondary); max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar-action {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    height: 32px; padding: 0 12px;
+    border: 2px solid var(--pixel-ink);
+    border-radius: 0;
+    background: var(--pixel-surface); color: var(--pixel-ink);
+    font-family: inherit; font-size: 12px; font-weight: 600; line-height: 1;
+    text-decoration: none; cursor: pointer;
+    transition: background-color 80ms steps(2, end), transform 80ms steps(2, end);
+}
+.topbar-action:hover { background: var(--pixel-green-hover); }
+.topbar-action:active { transform: translate(1px, 1px); }
 
 /* ==================== 布局 ==================== */
 .layout { display: grid; grid-template-columns: 240px 1fr; min-height: calc(100vh - 64px); }
