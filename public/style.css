@@ -44,9 +44,9 @@ button, summary, select, input[type="checkbox"] { cursor: pointer; }
     flex-shrink: 0;
     position: relative;
 }
-.brand-block { display: flex; align-items: baseline; gap: 14px; min-width: 0; }
-.app-bar-icon { width: 26px; height: 26px; align-self: center; border-radius: 5px; object-fit: cover; flex: 0 0 auto; }
-.app-bar-title { font-size: 17px; font-weight: 800; letter-spacing: .5px; white-space: nowrap; }
+.brand-block { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.app-bar-icon { width: 34px; height: 34px; align-self: center; border-radius: 0; object-fit: cover; flex: 0 0 auto; border: 2px solid var(--pixel-ink); }
+.app-bar-title { font-size: 16px; font-weight: 700; letter-spacing: .5px; white-space: nowrap; }
 .app-bar-subtitle { color: var(--pixel-ink-secondary); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .header-actions { display: flex; align-items: center; gap: 10px; }
 .service-badge, .status-chip {
@@ -417,8 +417,8 @@ input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--pixel-gr
 }
 .studio-tab:hover { color: var(--pixel-ink); background: var(--pixel-green-hover); }
 .studio-tab.active {
-    background: var(--pixel-page);
-    border-color: var(--pixel-ink);
+    background: var(--pixel-green-hover);
+    border-color: transparent;
     color: var(--pixel-ink);
     transform: none;
 }

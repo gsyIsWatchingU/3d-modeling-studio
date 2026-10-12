@@ -90,9 +90,9 @@ input:-webkit-autofill:focus {
     white-space: nowrap;
     color: var(--pixel-ink);
 }
-.brand-icon { width: 26px; height: 26px; border-radius: 4px; object-fit: cover; flex: 0 0 auto; border: 1px solid var(--pixel-ink); }
-.brand-text { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
-.brand-text b { font-size: 17px; font-weight: 800; }
+.brand-icon { width: 34px; height: 34px; border-radius: 0; object-fit: cover; flex: 0 0 auto; border: 2px solid var(--pixel-ink); }
+.brand-text { display: flex; flex-direction: row; align-items: center; line-height: 1.2; min-width: 0; }
+.brand-text b { font-size: 16px; font-weight: 700; }
 .brand-text span { font-size: 10px; color: var(--pixel-ink-secondary); letter-spacing: 2px; display: block; line-height: 1; }
 .topbar nav { display: flex; align-items: center; gap: 14px; font-size: 12px; }
 .topbar nav a { color: var(--pixel-green-strong); font-weight: 700; }

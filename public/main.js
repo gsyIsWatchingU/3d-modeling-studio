@@ -718,7 +718,6 @@ async function requireAuth() {
     const chip = document.getElementById('currentUser');
     chip.textContent = user.email;
     chip.hidden = false;
-    document.getElementById('logoutBtn').hidden = false;
     return user;
 }
 
